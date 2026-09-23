@@ -46,6 +46,9 @@ jobs:
       - name: Build Reusable Package Library (ESM, CJS, .d.ts)
         run: npm run build:lib
 
+      - name: Run Package Contract & Public API Smoke Test
+        run: npm run test:contract
+
       - name: Verify Package Packing & Artifact Integrity
         run: |
           npm pack --dry-run
@@ -64,7 +67,6 @@ jobs:
           npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        continue-on-error: true
 
       - name: Create GitHub Release
         if: ${{ !inputs.dry_run }}

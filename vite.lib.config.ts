@@ -11,7 +11,14 @@ export default defineConfig({
   plugins: [
     dts({
       include: ['src/**/*.ts'],
-      exclude: ['src/App.tsx', 'src/main.tsx', 'src/tests/runCliTests.ts'],
+      exclude: [
+        'src/App.tsx',
+        'src/main.tsx',
+        'src/tests/runCliTests.ts',
+        'src/tests/packageContractTest.ts',
+        'src/tests/readmeCompilationTest.ts',
+        'src/tests/packSmokeTest.ts',
+      ],
     }),
   ],
   resolve: {

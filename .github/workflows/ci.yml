@@ -31,3 +31,9 @@ jobs:
 
       - name: Build Reusable Package & Demo Application
         run: npm run build
+
+      - name: Run Package Contract & Public API Smoke Test
+        run: npm run test:contract
+
+      - name: Verify Package Pack Integrity
+        run: npm pack --dry-run

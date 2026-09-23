@@ -723,29 +723,75 @@ export class AcceptanceTestSuite {
 
   /**
    * Invariant Test R: Bounds ↔ Geometry Consistency Invariant
+   * Rigorously checks minX, minY, minZ, maxX, maxY, maxZ between getBounds() and THREE.Box3.
    */
   public static testCaseR_BoundsConsistency(): TestCaseResult {
-    const testIds = ['STRUCT_COLUMN', 'STRUCT_PIER', 'STRUCT_MAIN_BAY', 'TRAY_STRAIGHT', 'FITTING_ELBOW_90'];
-    const failures: any[] = [];
+    const requiredTestIds = [
+      'STRUCT_COLUMN',
+      'STRUCT_PIER',
+      'STRUCT_MAIN_BAY',
+      'STRUCT_BRANCH_BAY',
+      'TRAY_STRAIGHT',
+      'FITTING_ELBOW_90',
+      'FITTING_RISER_OUT_90',
+      'FITTING_REDUCER_LEFT',
+    ];
 
-    testIds.forEach((id) => {
+    const failures: Array<{
+      id: string;
+      axis: string;
+      boundsVal: number;
+      geoVal: number;
+      diff: number;
+    }> = [];
+
+    let maxError = 0;
+    const toleranceMm = 0.05; // 50 microns
+
+    requiredTestIds.forEach((id) => {
       const def = ComponentRegistry.get(id);
-      if (!def) return;
+      if (!def) {
+        failures.push({ id, axis: 'REGISTRY', boundsVal: 0, geoVal: 0, diff: -1 });
+        return;
+      }
+
       const bounds = def.getBounds(def.defaultParameters);
       const mesh = def.buildGeometry(def.defaultParameters);
       mesh.updateMatrixWorld(true);
 
       const box = new THREE.Box3().setFromObject(mesh);
-      // Compare in mm
       const geoMinMm = [box.min.x * 1000, box.min.y * 1000, box.min.z * 1000];
       const geoMaxMm = [box.max.x * 1000, box.max.y * 1000, box.max.z * 1000];
 
-      // Structural column height check
-      if (id === 'STRUCT_COLUMN') {
-        const hErr = Math.abs(geoMaxMm[1] - bounds.max[1]);
-        const yBaseErr = Math.abs(geoMinMm[1] - bounds.min[1]);
-        if (hErr > 1.0 || yBaseErr > 1.0) {
-          failures.push({ id, hErr, yBaseErr, geoMinMm, geoMaxMm, bounds });
+      const axes = ['X', 'Y', 'Z'];
+
+      // Compare minX, minY, minZ
+      for (let i = 0; i < 3; i++) {
+        const diff = Math.abs(bounds.min[i] - geoMinMm[i]);
+        maxError = Math.max(maxError, diff);
+        if (diff > toleranceMm) {
+          failures.push({
+            id,
+            axis: `min${axes[i]}`,
+            boundsVal: bounds.min[i],
+            geoVal: geoMinMm[i],
+            diff,
+          });
+        }
+      }
+
+      // Compare maxX, maxY, maxZ
+      for (let i = 0; i < 3; i++) {
+        const diff = Math.abs(bounds.max[i] - geoMaxMm[i]);
+        maxError = Math.max(maxError, diff);
+        if (diff > toleranceMm) {
+          failures.push({
+            id,
+            axis: `max${axes[i]}`,
+            boundsVal: bounds.max[i],
+            geoVal: geoMaxMm[i],
+            diff,
+          });
         }
       }
     });
@@ -756,11 +802,11 @@ export class AcceptanceTestSuite {
       id: 'Case R',
       name: '構件包絡邊界與實體幾何一致性 (Bounds ↔ Geometry Consistency Invariant)',
       passed,
-      expected: 'STRUCT_COLUMN, STRUCT_PIER, and bay bounds exactly envelope generated geometry with base at Y=0',
+      expected: `All ${requiredTestIds.length} required components have minX/Y/Z & maxX/Y/Z matching THREE.Box3 within ${toleranceMm}mm`,
       actual: passed
-        ? 'PASS (結構柱高 EL +8.0m 與底座 Y=0 實體網格與 getBounds 範圍完全吻合)'
-        : `FAIL: Bounding inconsistencies found`,
-      details: failures,
+        ? `PASS (已嚴格比對 ${requiredTestIds.length} 組構件之 6 軸包絡邊界 min/max，最大誤差 = ${maxError.toExponential(2)}mm)`
+        : `FAIL: ${failures.length} bounding coordinate inconsistencies (Max Error = ${maxError.toFixed(3)}mm)`,
+      details: { requiredTestIds, maxError, failures },
     };
   }
 

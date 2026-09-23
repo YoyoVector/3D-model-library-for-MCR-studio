@@ -82,6 +82,23 @@ export class ComponentRegistry {
   }
 
   private static register(def: ComponentDefinition): void {
+    const originalGetBounds = def.getBounds;
+    def.getBounds = (params: Record<string, any>) => {
+      try {
+        const mesh = def.buildGeometry(params);
+        mesh.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(mesh);
+        const base = originalGetBounds ? originalGetBounds(params) : undefined;
+        const roundMm = (n: number) => Math.round(n * 1000 * 100) / 100 + 0;
+        return {
+          min: [roundMm(box.min.x), roundMm(box.min.y), roundMm(box.min.z)],
+          max: [roundMm(box.max.x), roundMm(box.max.y), roundMm(box.max.z)],
+          clearanceEnvelope: base?.clearanceEnvelope,
+        };
+      } catch {
+        return originalGetBounds(params);
+      }
+    };
     this._definitions.set(def.id, def);
   }
 

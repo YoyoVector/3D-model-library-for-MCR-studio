@@ -96,6 +96,7 @@ export declare class AcceptanceTestSuite {
     static testCaseQ_CenterlinePortEndpoints(): TestCaseResult;
     /**
      * Invariant Test R: Bounds ↔ Geometry Consistency Invariant
+     * Rigorously checks minX, minY, minZ, maxX, maxY, maxZ between getBounds() and THREE.Box3.
      */
     static testCaseR_BoundsConsistency(): TestCaseResult;
     /**

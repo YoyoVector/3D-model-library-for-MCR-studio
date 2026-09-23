@@ -26,42 +26,6 @@
       "types": "./lib/index.d.ts",
       "import": "./lib/index.js",
       "require": "./lib/index.cjs"
-    },
-    "./core": {
-      "types": "./lib/core/index.d.ts",
-      "import": "./lib/core/index.js"
-    },
-    "./registry": {
-      "types": "./lib/registry/index.d.ts",
-      "import": "./lib/registry/index.js"
-    },
-    "./geometry": {
-      "types": "./lib/geometry/index.d.ts",
-      "import": "./lib/geometry/index.js"
-    },
-    "./ports": {
-      "types": "./lib/ports/index.d.ts",
-      "import": "./lib/ports/index.js"
-    },
-    "./centerline": {
-      "types": "./lib/centerline/index.d.ts",
-      "import": "./lib/centerline/index.js"
-    },
-    "./validation": {
-      "types": "./lib/validation/index.d.ts",
-      "import": "./lib/validation/index.js"
-    },
-    "./bom": {
-      "types": "./lib/bom/index.d.ts",
-      "import": "./lib/bom/index.js"
-    },
-    "./export": {
-      "types": "./lib/export/index.d.ts",
-      "import": "./lib/export/index.js"
-    },
-    "./tests": {
-      "types": "./lib/tests/index.d.ts",
-      "import": "./lib/tests/index.js"
     }
   },
   "files": [
@@ -79,7 +43,10 @@
     "clean": "rm -rf dist lib server.js",
     "lint": "tsc --noEmit",
     "test": "tsx src/tests/runCliTests.ts",
-    "prepublishOnly": "npm run lint && npm run test && npm run build:lib"
+    "test:contract": "tsx src/tests/packageContractTest.ts",
+    "test:smoke": "tsx src/tests/packSmokeTest.ts",
+    "test:all": "npm run test && npm run test:contract && npm run test:smoke",
+    "prepublishOnly": "npm run lint && npm run test && npm run build:lib && npm run test:contract && npm run test:smoke"
   },
   "peerDependencies": {
     "three": ">=0.160.0"
@@ -110,7 +77,7 @@
     "@types/three": "^0.186.0",
     "@typescript/typescript6": "^6.0.2",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",

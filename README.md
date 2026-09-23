@@ -100,29 +100,46 @@ const instances = [trayInstance, elbowInstance];
 // Generate BOM with zero double-counting
 const bom = BomManager.generateBom(instances, {
   scope: BomScope.MCR_CABLE_TRAY_BOM,
-  preventDoubleCounting: true,
+  filterBundledChildren: true,
 });
 
 console.log(bom.items);
-console.log(`Total count: ${bom.totalCount}, Double counting detected: ${bom.hasDoubleCounting}`);
+console.log(`Total items: ${bom.totalItems}, Double counting detected: ${bom.hasDoubleCounting}`);
 ```
 
 ---
 
-## Submodule Exports
+## Public API Reference
 
-| Import Path | Description |
-|---|---|
-| `@mcr-studio/parametric-3d` | Root bundle exporting all public APIs |
-| `@mcr-studio/parametric-3d/core` | `ComponentInstance`, `Units`, `Transforms`, `Schema` |
-| `@mcr-studio/parametric-3d/registry` | `ComponentRegistry`, `CatalogStandards`, `AssemblyRegistry` |
-| `@mcr-studio/parametric-3d/ports` | `MateEngine`, `MateResult` |
-| `@mcr-studio/parametric-3d/centerline` | `RouteGenerator`, `AnalyticLength` |
-| `@mcr-studio/parametric-3d/geometry` | `Generators`, `Materials` |
-| `@mcr-studio/parametric-3d/validation` | `ConnectionValidator` |
-| `@mcr-studio/parametric-3d/bom` | `BomManager`, `BomScope` |
-| `@mcr-studio/parametric-3d/export` | `JsonExporter` |
-| `@mcr-studio/parametric-3d/tests` | `AcceptanceTestSuite`, `LEGACY_FITTING_BASELINES` |
+All modules, types, and utilities are exported directly from the root package:
+
+```typescript
+import {
+  // Core & Runtime
+  ComponentInstance,
+  Units,
+  Transforms,
+  BomScope,
+
+  // Registries
+  ComponentRegistry,
+  AssemblyRegistry,
+  CatalogStandards,
+
+  // Spatial & Routing Engines
+  MateEngine,
+  RouteGenerator,
+  AnalyticLength,
+
+  // Validation & Procurement
+  ConnectionValidator,
+  BomManager,
+  JsonExporter,
+
+  // Test Suite
+  AcceptanceTestSuite,
+} from '@mcr-studio/parametric-3d';
+```
 
 ---
 

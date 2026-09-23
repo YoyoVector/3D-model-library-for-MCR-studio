@@ -106,18 +106,24 @@ export class GeometryGenerators {
     return group;
   }
 
+  static buildSplicePlate(params: { depth?: number } = {}): THREE.Group {
+    const depthM = params.depth ? Units.mmToM(params.depth) : 0.1;
+    return this.buildSplicePlateMesh(depthM);
+  }
+
   /**
    * Builds a cantilever support bracket.
    */
   static buildCantileverSupport(params: {
-    width: number; // mm
-    depth: number; // mm
+    width?: number; // mm
+    depth?: number; // mm
     armLength?: number; // mm
+    channelHeight?: number; // mm
   }): THREE.Group {
     const group = new THREE.Group();
-    const w = Units.mmToM(params.width);
-    const d = Units.mmToM(params.depth);
-    const armLen = Units.mmToM(params.armLength || params.width + 150);
+    const w = Units.mmToM(params.width || 600);
+    const d = Units.mmToM(params.depth || 100);
+    const armLen = Units.mmToM(params.armLength || (params.width ? params.width + 150 : 750));
 
     // C-channel horizontal arm
     const arm = new THREE.Mesh(
@@ -289,6 +295,8 @@ export class GeometryGenerators {
     const t = 0.04;
     const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
 
+    const ySign = params.isOutside ? -1 : 1;
+
     // Shape for vertical arc rail
     const shape = new THREE.Shape();
     shape.absarc(0, 0, r + d / 2, 0, angleRad, false);
@@ -298,6 +306,9 @@ export class GeometryGenerators {
 
     const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 32 });
     geo.translate(0, 0, -t / 2);
+    if (params.isOutside) {
+      geo.scale(1, -1, 1);
+    }
 
     const railL = new THREE.Mesh(geo, mat);
     railL.position.z = -w / 2;
@@ -315,14 +326,9 @@ export class GeometryGenerators {
       const a = (i * angleRad) / count;
       const rPos = r - d / 2 + rungD / 2;
       const rung = new THREE.Mesh(new THREE.BoxGeometry(rungW, rungD, w), mat);
-      rung.position.set(rPos * Math.cos(a), rPos * Math.sin(a), 0);
-      rung.rotation.z = a + Math.PI / 2;
+      rung.position.set(rPos * Math.cos(a), ySign * rPos * Math.sin(a), 0);
+      rung.rotation.z = ySign * (a + Math.PI / 2);
       group.add(rung);
-    }
-
-    if (params.isOutside) {
-      group.rotation.y = Math.PI;
-      group.rotation.z = -Math.PI / 2;
     }
 
     return group;
@@ -546,6 +552,7 @@ export class GeometryGenerators {
     const w = Units.mmToM(params.widthMm || 350);
 
     const col = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), Materials.ColumnSteel);
+    col.position.y = h / 2;
     col.castShadow = true;
     group.add(col);
     return group;
@@ -563,6 +570,7 @@ export class GeometryGenerators {
     const h = Units.mmToM(params.heightMm || 400);
 
     const pier = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), Materials.ConcretePier);
+    pier.position.y = h / 2;
     pier.receiveShadow = true;
     group.add(pier);
     return group;

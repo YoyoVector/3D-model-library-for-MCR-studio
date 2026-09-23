@@ -29,17 +29,25 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-import { ComponentRegistry } from './registry/ComponentRegistry.ts';
-import { ComponentInstance } from './core/Instance.ts';
-import { MateEngine } from './ports/MateEngine.ts';
-import { ConnectionValidator } from './validation/ConnectionValidator.ts';
-import { AcceptanceTestSuite, type TestSuiteReport } from './tests/TestSuite.ts';
-import { JsonExporter } from './export/JsonExporter.ts';
-import { BomManager, type BomReport } from './bom/BomManager.ts';
-import { CatalogStandards } from './registry/CatalogStandards.ts';
-import { Units } from './core/Units.ts';
-import { Materials } from './geometry/Materials.ts';
-import type { ComponentDefinition, WorldPortDefinition } from './core/Schema.ts';
+import {
+  VERSION,
+  ComponentRegistry,
+  ComponentInstance,
+  MateEngine,
+  ConnectionValidator,
+  AcceptanceTestSuite,
+  type TestSuiteReport,
+  JsonExporter,
+  BomManager,
+  type BomReport,
+  CatalogStandards,
+  Units,
+  Materials,
+  BomScope,
+  type ComponentDefinition,
+  type WorldPortDefinition,
+  type BomScopeType,
+} from './index.ts';
 
 // Theme Presets Definition
 export type ThemeId = 'DARK_SLATE' | 'STUDIO_LIGHT' | 'CAD_BLUEPRINT' | 'WARM_STUDIO' | 'CYBER_CONTRAST';
@@ -150,6 +158,7 @@ export default function App() {
   const [componentParams, setComponentParams] = useState<Record<string, any>>({});
   const [testReport, setTestReport] = useState<TestSuiteReport | null>(null);
   const [bomReport, setBomReport] = useState<BomReport | null>(null);
+  const [selectedBomScope, setSelectedBomScope] = useState<BomScopeType | 'ALL'>('ALL');
   const [selectedPort, setSelectedPort] = useState<WorldPortDefinition | null>(null);
 
   // Theme & Visual Contrast state (Default to STUDIO_LIGHT for high contrast full-visibility)
@@ -551,8 +560,8 @@ export default function App() {
     });
 
     // 3. Process & Steam Piping Obstacles
-    const pProc = new ComponentInstance('p_proc', ComponentRegistry.get('OBSTACLE_PROCESS_PIPE')!, {}, { position: [-5000, 3300, -1200] });
-    const pSteam = new ComponentInstance('p_steam', ComponentRegistry.get('OBSTACLE_STEAM_PIPE')!, {}, { position: [-5000, 5050, 1200] });
+    const pProc = new ComponentInstance('p_proc', ComponentRegistry.get('OBSTACLE_MAIN_PROCESS_PIPE')!, {}, { position: [-5000, 3300, -1200] });
+    const pSteam = new ComponentInstance('p_steam', ComponentRegistry.get('OBSTACLE_MAIN_STEAM_PIPE')!, {}, { position: [-5000, 5050, 1200] });
     plantGroup.add(pProc.getThreeMesh(), pSteam.getThreeMesh());
 
     // 4. Junction Boxes
@@ -701,9 +710,9 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-bold text-xs tracking-wider text-white flex items-center">
-                MCR-STUDIO <span className="text-[10px] ml-1.5 px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">v2.1</span>
+                MCR-STUDIO <span className="text-[10px] ml-1.5 px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">v{VERSION}</span>
               </h1>
-              <p className="text-[10px] text-slate-400">Parametric 3D Engineering Library</p>
+              <p className="text-[10px] text-slate-400">@mcr-studio/parametric-3d Demo Consumer</p>
             </div>
           </div>
         </div>
@@ -1021,12 +1030,12 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-white flex items-center space-x-2">
-                    <span>驗收測試報告 (Acceptance Suite Case A ~ Case P)</span>
+                    <span>驗收與不變量測試報告 (Acceptance & Invariant Suite Case A ~ Case V)</span>
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-700">
                       {testReport.totalPassed} / {testReport.totalCases} PASS (100%)
                     </span>
                   </h2>
-                  <p className="text-xs text-slate-400">嚴格驗證 Mate Transform、世界 Port、解析長度誤差 (&le;0.001mm)、BOM 防重複計價與 32 項幾何</p>
+                  <p className="text-xs text-slate-400">嚴格驗證 Mate Transform、世界 Port、解析長度誤差 (&le;0.001mm)、BOM 防重複計價、通用角度 SOT 與 32 項幾何不變量</p>
                 </div>
               </div>
               <div className="flex space-x-2">
@@ -1138,6 +1147,33 @@ export default function App() {
               </div>
             </div>
 
+            {/* Scope Filter Tabs */}
+            <div className="flex items-center space-x-1.5 mt-3 pt-3 border-t border-slate-800/80 text-xs">
+              <span className="text-slate-400 font-medium text-[11px] mr-1">BOM 採購範圍篩選:</span>
+              {[
+                { id: 'ALL', label: '全部範圍 (All Scopes)' },
+                { id: BomScope.MCR_CABLE_TRAY_BOM, label: '托架採購 (MCR Cable Tray)' },
+                { id: BomScope.MCR_TERMINATION_BOM, label: '終端與穿牆 (Termination/MCT)' },
+                { id: BomScope.STRUCTURAL_REF, label: '結構參考 (Structural Ref)' },
+                { id: BomScope.PROCESS_PIPING_REF, label: '製程管線 (Process Piping)' },
+              ].map((scopeOption) => {
+                const isSelected = selectedBomScope === scopeOption.id;
+                return (
+                  <button
+                    key={scopeOption.id}
+                    onClick={() => setSelectedBomScope(scopeOption.id as any)}
+                    className={`px-2.5 py-1 rounded text-[11px] font-medium transition ${
+                      isSelected
+                        ? 'bg-blue-600 text-white font-bold shadow'
+                        : 'bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    {scopeOption.label}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="flex-1 overflow-auto mt-4">
               <table className="w-full text-left text-xs border border-slate-800 whitespace-nowrap">
                 <thead className="bg-slate-900 text-slate-400 border-b border-slate-800 sticky top-0 z-10">
@@ -1145,6 +1181,7 @@ export default function App() {
                     <th className="py-2.5 px-3">項目</th>
                     <th className="py-2.5 px-3">元件代號</th>
                     <th className="py-2.5 px-3">工程名稱</th>
+                    <th className="py-2.5 px-3">BOM 範圍</th>
                     <th className="py-2.5 px-3">工藝技術規格</th>
                     <th className="py-2.5 px-3 text-right">數量</th>
                     <th className="py-2.5 px-3">單位</th>
@@ -1152,25 +1189,40 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 font-mono text-slate-300 text-[11px]">
-                  {bomReport.items.map((it) => (
-                    <tr key={it.itemNumber} className="hover:bg-slate-900/60 transition">
-                      <td className="py-2.5 px-3 text-slate-400">{it.itemNumber}</td>
-                      <td className="py-2.5 px-3 font-bold text-cyan-400">{it.definitionId}</td>
-                      <td className="py-2.5 px-3 text-white font-sans font-medium">{it.nameZh}</td>
-                      <td className="py-2.5 px-3 text-amber-300">{it.spec}</td>
-                      <td className="py-2.5 px-3 text-right font-bold text-white">{it.quantity}</td>
-                      <td className="py-2.5 px-3 text-slate-400">{it.unit}</td>
-                      <td className="py-2.5 px-3 text-slate-400 text-[10px] font-sans">
-                        {it.isAssemblyKit ? (
-                          <span className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
-                            組合套件 (子構件已封裝，零重複計價)
+                  {bomReport.items
+                    .filter((it) => selectedBomScope === 'ALL' || it.bomScope === selectedBomScope)
+                    .map((it) => (
+                      <tr key={it.itemNumber} className="hover:bg-slate-900/60 transition">
+                        <td className="py-2.5 px-3 text-slate-400">{it.itemNumber}</td>
+                        <td className="py-2.5 px-3 font-bold text-cyan-400">{it.definitionId}</td>
+                        <td className="py-2.5 px-3 text-white font-sans font-medium">{it.nameZh}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                            it.bomScope === BomScope.MCR_CABLE_TRAY_BOM
+                              ? 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                              : it.bomScope === BomScope.MCR_TERMINATION_BOM
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                              : it.bomScope === BomScope.STRUCTURAL_REF
+                              ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                              : 'bg-slate-900 text-slate-400 border border-slate-800'
+                          }`}>
+                            {it.bomScope}
                           </span>
-                        ) : (
-                          <span>獨立單品</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-2.5 px-3 text-amber-300">{it.spec}</td>
+                        <td className="py-2.5 px-3 text-right font-bold text-white">{it.quantity}</td>
+                        <td className="py-2.5 px-3 text-slate-400">{it.unit}</td>
+                        <td className="py-2.5 px-3 text-slate-400 text-[10px] font-sans">
+                          {it.isAssemblyKit ? (
+                            <span className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
+                              組合套件 (子構件已封裝，零重複計價)
+                            </span>
+                          ) : (
+                            <span>獨立單品</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>

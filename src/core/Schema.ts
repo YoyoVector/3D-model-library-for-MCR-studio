@@ -7,16 +7,30 @@ import type * as THREE from 'three';
 
 /**
  * Parameter Assumption Level classification according to Engineering Data rules.
+ * Prototype values without actual vendor source artifacts must be DEMO_DEFAULT or UNVERIFIED.
  */
 export const AssumptionLevel = {
-  VERIFIED_PROJECT_REQUIREMENT: 'VERIFIED_PROJECT_REQUIREMENT', // e.g., PIP PNC00001 (Tier EL +6.4m / +7.2m)
-  VERIFIED_VENDOR_CATALOG: 'VERIFIED_VENDOR_CATALOG',           // e.g., Roxtec RG M6x1 catalog
+  VERIFIED_PROJECT_REQUIREMENT: 'VERIFIED_PROJECT_REQUIREMENT', // Requires verified project spec reference
+  VERIFIED_VENDOR_CATALOG: 'VERIFIED_VENDOR_CATALOG',           // Requires verified vendor catalog reference
   DEMO_DEFAULT: 'DEMO_DEFAULT',                                 // Industrial common dimensions, prototype defaults
   PLACEHOLDER: 'PLACEHOLDER',                                   // Stand-in placeholder value
-  UNVERIFIED: 'UNVERIFIED',                                     // Engineering estimate not yet verified (e.g. thermal buffer)
+  UNVERIFIED: 'UNVERIFIED',                                     // Engineering estimate not yet verified
 } as const;
 
 export type AssumptionLevelType = (typeof AssumptionLevel)[keyof typeof AssumptionLevel];
+
+/**
+ * BOM Scope classification according to Canonical Implementation Plan.
+ */
+export const BomScope = {
+  MCR_CABLE_TRAY_BOM: 'MCR_CABLE_TRAY_BOM',   // Primary cable tray raceways and fittings
+  MCR_TERMINATION_BOM: 'MCR_TERMINATION_BOM', // Cabinets, JBs, MCTs, Glands
+  STRUCTURAL_REF: 'STRUCTURAL_REF',           // Pipe rack columns, beams, stringers, piers
+  PROCESS_PIPING_REF: 'PROCESS_PIPING_REF',   // Process pipes, steam pipes, hazard exclusion zones
+  VISUAL_ONLY: 'VISUAL_ONLY',                 // Dynamic animated cables, helper visuals
+} as const;
+
+export type BomScopeType = (typeof BomScope)[keyof typeof BomScope];
 
 /**
  * Origin taxonomy defining asset source and regression testing path.
@@ -147,6 +161,11 @@ export interface ComponentDefinition {
   description: string;
   defaultParameters: Record<string, any>;
   provenance: Record<string, ParameterProvenance>;
+
+  // BOM metadata according to Implementation Plan
+  hasBomMetadata?: boolean;
+  bomScope?: BomScopeType;
+  includedInMcrBom?: boolean;
 
   // Dynamic derive functions: all data MUST be derived from effectiveParameters
   getLocalPorts: (params: Record<string, any>) => ConnectionPortDefinition[];

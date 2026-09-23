@@ -10,6 +10,15 @@ export class RouteGenerator {
   /**
    * Generates a straight centerline route along the Z axis.
    */
+  static createStraight(
+    fromPort: string,
+    toPort: string,
+    lengthMm: number,
+    numSamples: number = 10
+  ): CenterlineRouteDefinition {
+    return this.createStraightZ(fromPort, toPort, lengthMm, numSamples);
+  }
+
   static createStraightZ(
     fromPort: string,
     toPort: string,
@@ -124,7 +133,7 @@ export class RouteGenerator {
       fromPort,
       toPort,
       type: 'STRAIGHT',
-      analyticLength: AnalyticLength.reducer(lengthMm),
+      analyticLength: AnalyticLength.reducer(lengthMm, offsetXMm),
       samplePoints: samples,
     };
   }

@@ -71,8 +71,8 @@ export class MateEngine {
     const targetDirB = frameA.direction.clone().negate().normalize();
     // Up vector aligns with portA.worldUp
     const targetUpB = frameA.up.clone().normalize();
-    const targetRightB = new THREE.Vector3().crossVectors(targetDirB, targetUpB).normalize();
-    const correctedTargetUpB = new THREE.Vector3().crossVectors(targetRightB, targetDirB).normalize();
+    const targetRightB = new THREE.Vector3().crossVectors(targetUpB, targetDirB).normalize();
+    const correctedTargetUpB = new THREE.Vector3().crossVectors(targetDirB, targetRightB).normalize();
 
     // Target matrix of Port B in world space: [right, up, dir]
     const mTargetB = new THREE.Matrix4();
@@ -119,6 +119,19 @@ export class MateEngine {
         ? `Mated successfully. Position error: ${posError.toFixed(4)} mm, alignment dot: ${alignDot.toFixed(4)}`
         : `Mating out of tolerance. Error: ${posError.toFixed(4)} mm, dot: ${alignDot.toFixed(4)}`,
     };
+  }
+
+  /**
+   * Convenience method to compute and return placement directly.
+   */
+  static computePlacement(
+    instanceA: ComponentInstance,
+    portIdA: string,
+    instanceB: ComponentInstance,
+    portIdB: string,
+    toleranceMm: number = 0.5
+  ): EngineeringPlacement {
+    return this.computeMateTransform(instanceA, portIdA, instanceB, portIdB, toleranceMm).placement;
   }
 
   /**

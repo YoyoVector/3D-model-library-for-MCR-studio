@@ -5,6 +5,7 @@
 
 import { ComponentRegistry } from '../registry/ComponentRegistry.ts';
 import { AssemblyRegistry } from '../registry/AssemblyRegistry.ts';
+import { BomScope, type BomScopeType } from '../core/Schema.ts';
 import type { ComponentInstance } from '../core/Instance.ts';
 
 export interface BomLineItem {
@@ -12,6 +13,7 @@ export interface BomLineItem {
   definitionId: string;
   name: string;
   nameZh: string;
+  bomScope: BomScopeType;
   spec: string;
   quantity: number;
   unit: string;
@@ -21,9 +23,17 @@ export interface BomLineItem {
 
 export interface BomReport {
   generatedAt: string;
+  scope: BomScopeType | 'ALL';
   totalItems: number;
   items: BomLineItem[];
   hasDoubleCounting: boolean;
+  excludedBundledItems: string[];
+}
+
+export interface BomGenerateOptions {
+  scope?: BomScopeType | 'ALL';
+  includeVisualOnly?: boolean;
+  filterBundledChildren?: boolean; // defaults to true
 }
 
 /**
@@ -34,40 +44,86 @@ export class BomManager {
   /**
    * Generates engineering BOM from an array of component instances.
    */
-  public static generateBom(instances: ComponentInstance[]): BomReport {
+  public static generateBom(
+    instances: ComponentInstance[],
+    options: BomGenerateOptions = {}
+  ): BomReport {
+    const scope = options.scope ?? 'ALL';
+    const filterBundledChildren = options.filterBundledChildren !== false;
+    const includeVisualOnly = options.includeVisualOnly === true;
+
     const itemMap = new Map<string, BomLineItem>();
     let counter = 1;
 
-    // Set of subcomponent definition IDs that are bundled inside active assemblies
-    const bundledSubcomponentDefs = new Set<string>();
+    // Track active assembly kits
+    const activeAssemblyInstanceIds = new Set<string>();
+    const bundledChildKeys = new Set<string>();
+    const excludedBundledItems: string[] = [];
 
     // Pass 1: Identify all assemblies and mark bundled subcomponents
     instances.forEach((inst) => {
-      if (AssemblyRegistry.isAssembly(inst.definitionId)) {
-        const subs = AssemblyRegistry.getSubComponents(inst.definitionId);
+      if (AssemblyRegistry.isAssembly(inst.definitionId) || (inst.definition.subComponents && inst.definition.subComponents.length > 0)) {
+        activeAssemblyInstanceIds.add(inst.instanceId);
+        const subs = AssemblyRegistry.getSubComponents(inst.definitionId).length > 0
+          ? AssemblyRegistry.getSubComponents(inst.definitionId)
+          : (inst.definition.subComponents || []);
+
         subs.forEach((sub) => {
           if (!sub.isPurchasedSeparately) {
-            bundledSubcomponentDefs.add(`${inst.instanceId}_${sub.definitionId}_${sub.instanceSuffix}`);
+            // Register composite key for child instance tagged to this parent
+            bundledChildKeys.add(`${inst.instanceId}_${sub.definitionId}`);
+            bundledChildKeys.add(`${inst.instanceId}_${sub.definitionId}_${sub.instanceSuffix}`);
           }
         });
       }
     });
 
-    // Pass 2: Aggregate line items
+    let doubleCountingOccurred = false;
+
+    // Pass 2: Process instances and filter out bundled children
     instances.forEach((inst) => {
       const def = inst.definition;
-      const key = def.id;
 
+      // Filter by visual / BOM metadata
+      if (!includeVisualOnly && (def.bomScope === BomScope.VISUAL_ONLY || def.hasBomMetadata === false)) {
+        return;
+      }
+
+      // Filter by scope
+      if (scope !== 'ALL' && def.bomScope !== scope) {
+        return;
+      }
+
+      // Check if this instance is a bundled child of an active assembly in this scene
+      const isBundledChild =
+        (inst.parentAssemblyInstanceId && activeAssemblyInstanceIds.has(inst.parentAssemblyInstanceId)) ||
+        (inst.parentAssemblyInstanceId && bundledChildKeys.has(`${inst.parentAssemblyInstanceId}_${def.id}`)) ||
+        Array.from(activeAssemblyInstanceIds).some(
+          (parentInstId) => inst.instanceId.startsWith(parentInstId) && inst.instanceId !== parentInstId
+        );
+
+      if (isBundledChild) {
+        if (filterBundledChildren) {
+          // Actively exclude bundled child instance from loose billing
+          excludedBundledItems.push(inst.instanceId);
+          return;
+        } else {
+          // Double counting not prevented
+          doubleCountingOccurred = true;
+        }
+      }
+
+      const key = def.id;
       let spec = '';
       let unit = 'PCS';
-      let qty = 1;
+      const qty = 1;
 
       if (def.id === 'TRAY_STRAIGHT' || def.id === 'TRAY_STRAIGHT_DIVIDER') {
         const lenM = (inst.effectiveParameters.length || 3000) / 1000;
         spec = `W=${inst.effectiveParameters.width || 600}mm / H=${inst.effectiveParameters.depth || 100}mm / L=${lenM}m (HDG 85μm)`;
         unit = '支';
       } else if (def.id.startsWith('FITTING_ELBOW')) {
-        spec = `R=${inst.effectiveParameters.radius || 600}mm W=${inst.effectiveParameters.width || 600}mm Angle=${inst.effectiveParameters.angleDeg || 90}°`;
+        spec = `R=${inst.effectiveParameters.radius || 600}mm W=${inst.effectiveParameters.width || 600}mm Angle=${inst.effectiveParameters.angleDeg ?? 90}°`;
         unit = '組';
       } else if (def.id === 'FITTING_TEE') {
         spec = `W=${inst.effectiveParameters.width || 600}mm L=${inst.effectiveParameters.length || 1400}mm Branch=${inst.effectiveParameters.branchLength || 700}mm`;
@@ -88,6 +144,8 @@ export class BomManager {
         spec = `標準工程預製規格`;
       }
 
+      const isKit = AssemblyRegistry.isAssembly(def.id) || (def.subComponents && def.subComponents.length > 0) || false;
+
       if (itemMap.has(key)) {
         itemMap.get(key)!.quantity += qty;
       } else {
@@ -96,11 +154,12 @@ export class BomManager {
           definitionId: def.id,
           name: def.name,
           nameZh: def.nameZh,
+          bomScope: def.bomScope ?? BomScope.MCR_CABLE_TRAY_BOM,
           spec,
           quantity: qty,
           unit,
-          isAssemblyKit: AssemblyRegistry.isAssembly(def.id),
-          notes: AssemblyRegistry.isAssembly(def.id) ? 'Assembly Kit: Internal subcomponents bundled (No double count)' : 'Direct Component',
+          isAssemblyKit: isKit,
+          notes: isKit ? 'Assembly Kit: Internal subcomponents bundled (No double count)' : 'Direct Component',
         });
       }
     });
@@ -109,9 +168,11 @@ export class BomManager {
 
     return {
       generatedAt: new Date().toISOString(),
+      scope,
       totalItems: items.reduce((acc, it) => acc + it.quantity, 0),
       items,
-      hasDoubleCounting: false, // Enforced zero double counting
+      hasDoubleCounting: doubleCountingOccurred,
+      excludedBundledItems,
     };
   }
 }

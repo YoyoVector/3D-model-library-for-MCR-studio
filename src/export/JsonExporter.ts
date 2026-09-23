@@ -35,7 +35,13 @@ export interface ExportedSceneJson {
       position: [number, number, number];
       quaternion: [number, number, number, number];
     };
-    worldPorts: any[];
+    // Non-canonical derived snapshot for caching / visualization only.
+    // Downstream importers MUST re-derive canonical state from definitionId, effectiveParameters, and placement.
+    derivedSnapshot: {
+      status: 'NON_CANONICAL_SNAPSHOT';
+      worldPorts: any[];
+      bounds: any;
+    };
   }>;
 }
 
@@ -75,7 +81,7 @@ export class JsonExporter {
   }
 
   /**
-   * Exports active scene instances into JSON.
+   * Exports active scene instances into canonical JSON payload.
    */
   public static exportScene(instances: ComponentInstance[]): ExportedSceneJson {
     return {
@@ -89,7 +95,11 @@ export class JsonExporter {
           position: [...inst.placement.position] as [number, number, number],
           quaternion: [...inst.placement.quaternion] as [number, number, number, number],
         },
-        worldPorts: inst.getWorldPorts(),
+        derivedSnapshot: {
+          status: 'NON_CANONICAL_SNAPSHOT',
+          worldPorts: inst.getWorldPorts(),
+          bounds: inst.getBounds(),
+        },
       })),
     };
   }

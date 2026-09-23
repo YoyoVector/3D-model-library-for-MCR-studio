@@ -28,10 +28,11 @@ export class AnalyticLength {
   }
 
   /**
-   * Reducer transition length (along centerline axis).
+   * Reducer transition physical centerline length.
+   * For eccentric reducers with lateral offset: sqrt(length^2 + offset^2).
    */
-  static reducer(lengthMm: number): number {
-    return Math.abs(lengthMm);
+  static reducer(lengthMm: number, lateralOffsetMm: number = 0): number {
+    return Math.hypot(lengthMm, lateralOffsetMm);
   }
 
   /**

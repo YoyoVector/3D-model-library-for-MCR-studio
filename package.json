@@ -1,14 +1,93 @@
 {
-  "name": "react-example",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@mcr-studio/parametric-3d",
+  "version": "1.0.0",
+  "description": "MCR-Studio Parametric Engineering 3D Component Library - Cable trays, structural racks, piping obstacles & parametric routing engine",
+  "author": "CTCI / MCR-Studio",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YoyoVector/3D-model-library-for-MCR-studio.git"
+  },
+  "keywords": [
+    "cable-tray",
+    "parametric-3d",
+    "bim",
+    "engineering",
+    "threejs",
+    "cad",
+    "mcr-studio"
+  ],
   "type": "module",
+  "main": "./lib/index.cjs",
+  "module": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs"
+    },
+    "./core": {
+      "types": "./lib/core/index.d.ts",
+      "import": "./lib/core/index.js"
+    },
+    "./registry": {
+      "types": "./lib/registry/index.d.ts",
+      "import": "./lib/registry/index.js"
+    },
+    "./geometry": {
+      "types": "./lib/geometry/index.d.ts",
+      "import": "./lib/geometry/index.js"
+    },
+    "./ports": {
+      "types": "./lib/ports/index.d.ts",
+      "import": "./lib/ports/index.js"
+    },
+    "./centerline": {
+      "types": "./lib/centerline/index.d.ts",
+      "import": "./lib/centerline/index.js"
+    },
+    "./validation": {
+      "types": "./lib/validation/index.d.ts",
+      "import": "./lib/validation/index.js"
+    },
+    "./bom": {
+      "types": "./lib/bom/index.d.ts",
+      "import": "./lib/bom/index.js"
+    },
+    "./export": {
+      "types": "./lib/export/index.d.ts",
+      "import": "./lib/export/index.js"
+    },
+    "./tests": {
+      "types": "./lib/tests/index.d.ts",
+      "import": "./lib/tests/index.js"
+    }
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "npm run build:lib && npm run build:app",
+    "build:lib": "vite build --config vite.lib.config.ts",
+    "build:app": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "clean": "rm -rf dist lib server.js",
+    "lint": "tsc --noEmit",
+    "test": "tsx src/tests/runCliTests.ts",
+    "prepublishOnly": "npm run lint && npm run test && npm run build:lib"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": false
+    }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -29,10 +108,12 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
+    "@typescript/typescript6": "^6.0.2",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite-plugin-dts": "^5.1.1"
   }
 }

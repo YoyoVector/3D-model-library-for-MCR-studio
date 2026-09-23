@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import {
   AssumptionLevel,
+  BomScope,
   ComponentOrigin,
   ComponentRole,
   type ComponentDefinition,
@@ -18,15 +19,54 @@ import { AnalyticLength } from '../centerline/AnalyticLength.ts';
 import { GeometryGenerators } from '../geometry/Generators.ts';
 
 /**
+ * Helper to compute horizontal elbow bounds dynamically based on angle and radius.
+ */
+function computeHorizontalElbowBounds(r: number, w: number, d: number, angleDeg: number): ComponentBoundsDefinition {
+  const halfW = w / 2;
+  const halfD = d / 2;
+  const aRad = (Math.abs(angleDeg) * Math.PI) / 180;
+  const endX = r * Math.cos(aRad);
+  const endZ = -r * Math.sin(aRad);
+
+  const minX = Math.min(-halfW, endX - halfW, (r - halfW) * Math.cos(aRad));
+  const maxX = r + halfW;
+  const minZ = Math.min(-r - halfW, endZ - halfW, -Math.sin(aRad) * (r + halfW));
+  const maxZ = halfW;
+
+  return {
+    min: [minX, -halfD, minZ],
+    max: [maxX, halfD, maxZ],
+  };
+}
+
+/**
+ * Helper to compute vertical riser bounds dynamically based on angle and radius.
+ */
+function computeVerticalRiserBounds(r: number, w: number, d: number, angleDeg: number, isOutside: boolean): ComponentBoundsDefinition {
+  const halfW = w / 2;
+  const halfD = d / 2;
+  const aRad = (Math.abs(angleDeg) * Math.PI) / 180;
+  const endX = r * Math.cos(aRad);
+  const endY = (isOutside ? -1 : 1) * r * Math.sin(aRad);
+
+  const minX = Math.min(-halfD, endX - halfD, (r - halfD) * Math.cos(aRad));
+  const maxX = r + halfD;
+  const minY = isOutside ? Math.min(-r - halfD, endY - halfD) : -halfD;
+  const maxY = isOutside ? halfD : Math.max(r + halfD, endY + halfD);
+
+  return {
+    min: [minX, minY, -halfW],
+    max: [maxX, maxY, halfW],
+  };
+}
+
+/**
  * Single Canonical Component Registry for MCR-Studio.
  * Contains definitions for all 32 components across the 4 origin classifications.
  */
 export class ComponentRegistry {
   private static _definitions: Map<string, ComponentDefinition> = new Map();
 
-  /**
-   * Initializes and registers all 32 components.
-   */
   public static getAll(): ComponentDefinition[] {
     if (this._definitions.size === 0) {
       this.initAll();
@@ -45,7 +85,9 @@ export class ComponentRegistry {
     this._definitions.set(def.id, def);
   }
 
-  private static initAll(): void {
+  public static initAll(): void {
+    this._definitions.clear();
+
     // -------------------------------------------------------------
     // 1. LEGACY_FITTING_LIBRARY (8 items)
     // -------------------------------------------------------------
@@ -55,32 +97,36 @@ export class ComponentRegistry {
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'TRAY_STRAIGHT',
-      name: 'Straight Cable Tray',
-      nameZh: '標準直段托架',
-      family: 'CABLE_TRAY',
+      name: 'Straight Ladder Cable Tray',
+      nameZh: '直通梯級式電纜托架',
+      family: 'TRAY',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.TRAY,
-      description: 'Standard heavy-duty industrial straight ladder cable tray with side rails and rungs.',
+      description: 'Standard 3-meter straight ladder cable tray for non-IS power/control cabling.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
-        width: 600, // mm
-        depth: 100, // mm
-        length: 3000, // mm
+        width: 600,
+        depth: 100,
+        length: 3000,
         rungSpacing: 250,
       },
       provenance: {
-        width: { source: 'NEMA VE 1 / Industrial Standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Standard nominal tray width' },
-        depth: { source: 'NEMA VE 1', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Standard 100mm side rail height' },
-        length: { source: 'Standard 3m section', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Catalog standard 3000mm length' },
+        width: { source: 'Oglaend Catalog / NEMA VE 1 Standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '600mm nominal tray width' },
+        depth: { source: 'Oglaend Catalog Standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '100mm side rail height' },
+        length: { source: 'Standard 3m manufactured segment', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '3000mm segment' },
+        rungSpacing: { source: 'NEMA VE 1 standard 9-inch rung spacing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '~250mm rung pitch' },
       },
       getLocalPorts: (params) => {
-        const halfL = (params.length || 3000) / 2;
+        const l = params.length || 3000;
         const w = params.width || 600;
         const d = params.depth || 100;
         return [
           {
             id: 'PORT_A',
-            name: 'Inlet (Start)',
-            localPosition: [0, 0, -halfL],
+            name: 'Inlet Port A',
+            localPosition: [0, 0, -l / 2],
             localDirection: [0, 0, -1],
             localUp: [0, 1, 0],
             width: w,
@@ -89,8 +135,8 @@ export class ComponentRegistry {
           },
           {
             id: 'PORT_B',
-            name: 'Outlet (End)',
-            localPosition: [0, 0, halfL],
+            name: 'Outlet Port B',
+            localPosition: [0, 0, l / 2],
             localDirection: [0, 0, 1],
             localUp: [0, 1, 0],
             width: w,
@@ -100,16 +146,13 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createStraightZ('PORT_A', 'PORT_B', params.length || 3000),
+        RouteGenerator.createStraight('PORT_A', 'PORT_B', params.length || 3000),
       ],
       getBounds: (params) => {
-        const halfW = (params.width || 600) / 2;
-        const halfD = (params.depth || 100) / 2;
-        const halfL = (params.length || 3000) / 2;
-        return {
-          min: [-halfW, -halfD, -halfL],
-          max: [halfW, halfD, halfL],
-        };
+        const hw = (params.width || 600) / 2;
+        const hd = (params.depth || 100) / 2;
+        const hl = (params.length || 3000) / 2;
+        return { min: [-hw, -hd, -hl], max: [hw, hd, hl] };
       },
       buildGeometry: (params) => GeometryGenerators.buildStraightTray(params as any),
     });
@@ -119,24 +162,61 @@ export class ComponentRegistry {
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'TRAY_STRAIGHT_DIVIDER',
-      name: 'Straight Cable Tray with Divider',
-      nameZh: '直段托架附金屬隔離板',
-      family: 'CABLE_TRAY',
+      name: 'Divided Straight Tray (IS & Non-IS)',
+      nameZh: '隔板分流梯級式電纜托架',
+      family: 'TRAY',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.TRAY,
-      description: 'Straight ladder tray equipped with physical grounded metallic divider for IS/Non-IS segregation.',
+      description: 'Straight ladder tray with central barrier separator isolating IS signal cables from dirty power.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
         length: 3000,
-        hasDivider: true,
+        rungSpacing: 250,
+        dividerHeight: 80,
       },
       provenance: {
-        hasDivider: { source: 'PIP PNC00001 / IEC 60079-14', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: 'IS/Non-IS partition requirement' },
+        dividerHeight: { source: 'EMC segregation practice', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Continuous metallic barrier' },
       },
-      getLocalPorts: (params) => ComponentRegistry.get('TRAY_STRAIGHT')!.getLocalPorts(params),
-      getCenterlineRoutes: (params) => ComponentRegistry.get('TRAY_STRAIGHT')!.getCenterlineRoutes(params),
-      getBounds: (params) => ComponentRegistry.get('TRAY_STRAIGHT')!.getBounds(params),
+      getLocalPorts: (params) => {
+        const l = params.length || 3000;
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        return [
+          {
+            id: 'PORT_A',
+            name: 'Inlet Port A (IS/Non-IS Dual Entry)',
+            localPosition: [0, 0, -l / 2],
+            localDirection: [0, 0, -1],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_B',
+            name: 'Outlet Port B (IS/Non-IS Dual Exit)',
+            localPosition: [0, 0, l / 2],
+            localDirection: [0, 0, 1],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+        ];
+      },
+      getCenterlineRoutes: (params) => [
+        RouteGenerator.createStraight('PORT_A', 'PORT_B', params.length || 3000),
+      ],
+      getBounds: (params) => {
+        const hw = (params.width || 600) / 2;
+        const hd = (params.depth || 100) / 2;
+        const hl = (params.length || 3000) / 2;
+        return { min: [-hw, -hd, -hl], max: [hw, hd, hl] };
+      },
       buildGeometry: (params) => GeometryGenerators.buildStraightTray({ ...params, hasDivider: true } as any),
     });
 
@@ -145,22 +225,51 @@ export class ComponentRegistry {
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'FITTING_SPLICE_PLATE',
-      name: 'Splice Plate Assembly',
-      nameZh: '螺栓對接連接板組',
+      name: 'Standard Splice Plate Connection Kit',
+      nameZh: '標準連接壓板組件 (含搭接螺栓)',
       family: 'ACCESSORY',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
-      role: ComponentRole.FITTING,
-      description: 'Bolted coupling splice plate set connecting adjacent tray side rails.',
+      role: ComponentRole.SUPPORT,
+      description: 'Factory-formed bolted steel splice plates connecting adjacent tray side rails.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         depth: 100,
+        length: 200,
+        boltCount: 4,
       },
       provenance: {
-        depth: { source: 'Oglaend Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'Matches 100mm rail' },
+        length: { source: 'Oglaend standard splice plate SP-100', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '200mm length' },
       },
-      getLocalPorts: () => [],
+      getLocalPorts: (params) => [
+        {
+          id: 'PORT_L_RAIL',
+          name: 'Left Rail Connection',
+          localPosition: [-300, 0, 0],
+          localDirection: [-1, 0, 0],
+          localUp: [0, 1, 0],
+          width: 20,
+          depth: params.depth || 100,
+          connectionType: 'STRUCTURAL',
+        },
+        {
+          id: 'PORT_R_RAIL',
+          name: 'Right Rail Connection',
+          localPosition: [300, 0, 0],
+          localDirection: [1, 0, 0],
+          localUp: [0, 1, 0],
+          width: 20,
+          depth: params.depth || 100,
+          connectionType: 'STRUCTURAL',
+        },
+      ],
       getCenterlineRoutes: () => [],
-      getBounds: () => ({ min: [-25, -50, -60], max: [25, 50, 60] }),
-      buildGeometry: (params) => GeometryGenerators.buildSplicePlateMesh((params.depth || 100) / 1000),
+      getBounds: (params) => ({
+        min: [-310, -(params.depth || 100) / 2, -(params.length || 200) / 2],
+        max: [310, (params.depth || 100) / 2, (params.length || 200) / 2],
+      }),
+      buildGeometry: (params) => GeometryGenerators.buildSplicePlate(params as any),
     });
 
     // 4. SUPPORT_CANTILEVER
@@ -168,36 +277,49 @@ export class ComponentRegistry {
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'SUPPORT_CANTILEVER',
-      name: 'Cantilever Support Arm',
-      nameZh: '懸臂固定支撐架',
+      name: 'Cantilever Tray Support Arm',
+      nameZh: '懸臂式托架支撐臂',
       family: 'SUPPORT',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.SUPPORT,
-      description: 'C-channel cantilever bracket with backplate and hold-down clamps for column mounting.',
+      description: 'Structural steel cantilever bracket bolted to pipe rack columns to carry cable trays.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
-        width: 600,
-        depth: 100,
         armLength: 750,
+        channelHeight: 120,
+        thickness: 45,
       },
       provenance: {
-        armLength: { source: 'Typical tray bracket sizing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Width + 150mm extension' },
+        armLength: { source: 'Standard 600mm tray support clearance', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '750mm arm length' },
       },
       getLocalPorts: (params) => [
         {
-          id: 'PORT_MOUNT',
-          name: 'Column Mounting Backplate',
-          localPosition: [-(params.width || 600) / 2 - 60, -150, 0],
+          id: 'PORT_BASE',
+          name: 'Column Mounting Plate',
+          localPosition: [0, 0, 0],
           localDirection: [-1, 0, 0],
           localUp: [0, 1, 0],
-          width: 60,
-          depth: 250,
+          width: 80,
+          depth: 160,
+          connectionType: 'STRUCTURAL',
+        },
+        {
+          id: 'PORT_TRAY_SEAT',
+          name: 'Tray Seating Surface',
+          localPosition: [(params.armLength || 750) / 2, (params.channelHeight || 120) / 2, 0],
+          localDirection: [0, 1, 0],
+          localUp: [1, 0, 0],
+          width: params.armLength || 750,
+          depth: 45,
           connectionType: 'STRUCTURAL',
         },
       ],
       getCenterlineRoutes: () => [],
       getBounds: (params) => ({
-        min: [-(params.width || 600) / 2 - 70, -200, -30],
-        max: [(params.width || 600) / 2 + 100, 50, 30],
+        min: [0, -(params.channelHeight || 120) / 2, -25],
+        max: [params.armLength || 750, (params.channelHeight || 120) / 2, 25],
       }),
       buildGeometry: (params) => GeometryGenerators.buildCantileverSupport(params as any),
     });
@@ -212,7 +334,10 @@ export class ComponentRegistry {
       family: 'FITTING',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.FITTING,
-      description: 'Factory-formed 90-degree horizontal elbow for planar routing directional change.',
+      description: 'Horizontal bend with dynamic angleDeg single source of truth for smooth directional change.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
@@ -220,19 +345,26 @@ export class ComponentRegistry {
         angleDeg: 90,
       },
       provenance: {
-        radius: { source: 'Minimum cable bending radius standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Catalog R=600mm' },
-        angleDeg: { source: 'Standard 90-degree turn', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'Standard bend' },
+        radius: { source: 'Oglaend Catalog / NEMA VE 1 Standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Standard bend R=600mm' },
+        angleDeg: { source: 'Nominal 90 degree sweep', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Supports generic angleDeg' },
       },
       getLocalPorts: (params) => {
         const r = params.radius || 600;
         const w = params.width || 600;
         const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 90;
+        const aRad = (aDeg * Math.PI) / 180;
+        const endX = r * Math.cos(aRad);
+        const endZ = -r * Math.sin(aRad);
+        const outDirX = -Math.sin(aRad);
+        const outDirZ = -Math.cos(aRad);
+
         return [
           {
             id: 'PORT_A',
             name: 'Inlet Port A',
             localPosition: [r, 0, 0],
-            localDirection: [0, 0, 1], // Normal pointing outward facing straight tray inlet
+            localDirection: [0, 0, 1],
             localUp: [0, 1, 0],
             width: w,
             depth: d,
@@ -241,8 +373,8 @@ export class ComponentRegistry {
           {
             id: 'PORT_B',
             name: 'Outlet Port B',
-            localPosition: [0, 0, -r],
-            localDirection: [-1, 0, 0], // Outward normal along -X
+            localPosition: [endX, 0, endZ],
+            localDirection: [outDirX, 0, outDirZ],
             localUp: [0, 1, 0],
             width: w,
             depth: d,
@@ -251,18 +383,16 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createHorizontalElbow('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg || 90),
+        RouteGenerator.createHorizontalElbow('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 90),
       ],
       getBounds: (params) => {
         const r = params.radius || 600;
-        const halfW = (params.width || 600) / 2;
-        const halfD = (params.depth || 100) / 2;
-        return {
-          min: [-halfW, -halfD, -r - halfW],
-          max: [r + halfW, halfD, halfW],
-        };
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 90;
+        return computeHorizontalElbowBounds(r, w, d, aDeg);
       },
-      buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: 90 } as any),
+      buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: params.angleDeg ?? 90 } as any),
     });
 
     // 6. FITTING_TEE
@@ -270,31 +400,36 @@ export class ComponentRegistry {
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'FITTING_TEE',
-      name: 'Horizontal Tee',
-      nameZh: '水平三通配件',
+      name: 'Horizontal Tee Fitting',
+      nameZh: '水平三通托架 (Tee)',
       family: 'FITTING',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.FITTING,
-      description: 'T-junction fitting connecting a main through-run to a perpendicular branch tray.',
+      description: 'Standard 3-way horizontal Tee fitting with smooth curved arc transition to lateral branch.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
         length: 1400,
         branchLength: 700,
+        radius: 300,
       },
       provenance: {
-        length: { source: 'Oglaend standard tee', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Main run length' },
+        length: { source: 'Oglaend Catalog Standard Tee', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Main run length 1400mm' },
+        branchLength: { source: 'Oglaend Catalog Standard Tee', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Branch projection 700mm' },
       },
       getLocalPorts: (params) => {
-        const halfL = (params.length || 1400) / 2;
+        const l = params.length || 1400;
         const bl = params.branchLength || 700;
         const w = params.width || 600;
         const d = params.depth || 100;
         return [
           {
             id: 'PORT_A',
-            name: 'Main Run Inlet',
-            localPosition: [-halfL, 0, 0],
+            name: 'Main Run Inlet Port A',
+            localPosition: [-l / 2, 0, 0],
             localDirection: [-1, 0, 0],
             localUp: [0, 1, 0],
             width: w,
@@ -303,8 +438,8 @@ export class ComponentRegistry {
           },
           {
             id: 'PORT_B',
-            name: 'Main Run Outlet',
-            localPosition: [halfL, 0, 0],
+            name: 'Main Run Outlet Port B',
+            localPosition: [l / 2, 0, 0],
             localDirection: [1, 0, 0],
             localUp: [0, 1, 0],
             width: w,
@@ -313,7 +448,7 @@ export class ComponentRegistry {
           },
           {
             id: 'PORT_C',
-            name: 'Branch Port',
+            name: 'Branch Outlet Port C',
             localPosition: [0, 0, bl],
             localDirection: [0, 0, 1],
             localUp: [0, 1, 0],
@@ -326,53 +461,77 @@ export class ComponentRegistry {
       getCenterlineRoutes: (params) => {
         const l = params.length || 1400;
         const bl = params.branchLength || 700;
-        return [
-          {
-            id: 'ROUTE_A_B',
-            fromPort: 'PORT_A',
-            toPort: 'PORT_B',
-            type: 'STRAIGHT',
-            analyticLength: AnalyticLength.straight(l),
-            samplePoints: [
-              [-l / 2, 0, 0],
-              [0, 0, 0],
-              [l / 2, 0, 0],
-            ],
-          },
-          {
-            id: 'ROUTE_A_C',
-            fromPort: 'PORT_A',
-            toPort: 'PORT_C',
-            type: 'ARC_XZ',
-            analyticLength: AnalyticLength.teeBranch(l, bl),
-            samplePoints: [
-              [-l / 2, 0, 0],
-              [0, 0, 0],
-              [0, 0, bl],
-            ],
-          },
-          {
-            id: 'ROUTE_B_C',
-            fromPort: 'PORT_B',
-            toPort: 'PORT_C',
-            type: 'ARC_XZ',
-            analyticLength: AnalyticLength.teeBranch(l, bl),
-            samplePoints: [
-              [l / 2, 0, 0],
-              [0, 0, 0],
-              [0, 0, bl],
-            ],
-          },
-        ];
+        const r = params.radius || 300;
+
+        // Route A to B: Straight main run
+        const routeAB: CenterlineRouteDefinition = {
+          id: 'ROUTE_A_B',
+          fromPort: 'PORT_A',
+          toPort: 'PORT_B',
+          type: 'STRAIGHT',
+          analyticLength: AnalyticLength.straight(l),
+          samplePoints: [
+            [-l / 2, 0, 0],
+            [0, 0, 0],
+            [l / 2, 0, 0],
+          ],
+        };
+
+        // Route A to C: Straight (-l/2 to -r) + Arc (-r, 0 to 0, r with center at -r, r) + Straight (r to bl)
+        const samplesAC: Array<[number, number, number]> = [];
+        samplesAC.push([-l / 2, 0, 0]);
+        const numArcSamples = 10;
+        for (let i = 0; i <= numArcSamples; i++) {
+          const t = i / numArcSamples;
+          // angle goes from -pi/2 to 0
+          const theta = -Math.PI / 2 + t * (Math.PI / 2);
+          const x = -r + r * Math.cos(theta);
+          const z = r + r * Math.sin(theta);
+          samplesAC.push([x, 0, z]);
+        }
+        samplesAC.push([0, 0, bl]);
+
+        const routeAC: CenterlineRouteDefinition = {
+          id: 'ROUTE_A_C',
+          fromPort: 'PORT_A',
+          toPort: 'PORT_C',
+          type: 'ARC_XZ',
+          analyticLength: AnalyticLength.teeBranch(l, bl, r),
+          samplePoints: samplesAC,
+        };
+
+        // Route B to C: Straight (l/2 to r) + Arc (r, 0 to 0, r with center at r, r) + Straight (r to bl)
+        const samplesBC: Array<[number, number, number]> = [];
+        samplesBC.push([l / 2, 0, 0]);
+        for (let i = 0; i <= numArcSamples; i++) {
+          const t = i / numArcSamples;
+          // angle goes from -pi/2 to -pi
+          const theta = -Math.PI / 2 - t * (Math.PI / 2);
+          const x = r + r * Math.cos(theta);
+          const z = r + r * Math.sin(theta);
+          samplesBC.push([x, 0, z]);
+        }
+        samplesBC.push([0, 0, bl]);
+
+        const routeBC: CenterlineRouteDefinition = {
+          id: 'ROUTE_B_C',
+          fromPort: 'PORT_B',
+          toPort: 'PORT_C',
+          type: 'ARC_XZ',
+          analyticLength: AnalyticLength.teeBranch(l, bl, r),
+          samplePoints: samplesBC,
+        };
+
+        return [routeAB, routeAC, routeBC];
       },
       getBounds: (params) => {
-        const halfL = (params.length || 1400) / 2;
+        const hl = (params.length || 1400) / 2;
         const bl = params.branchLength || 700;
-        const halfW = (params.width || 600) / 2;
-        const halfD = (params.depth || 100) / 2;
+        const hd = (params.depth || 100) / 2;
+        const hw = (params.width || 600) / 2;
         return {
-          min: [-halfL, -halfD, -halfW],
-          max: [halfL, halfD, bl],
+          min: [-hl, -hd, -hw],
+          max: [hl, hd, bl],
         };
       },
       buildGeometry: (params) => GeometryGenerators.buildHorizontalTee(params as any),
@@ -388,7 +547,10 @@ export class ComponentRegistry {
       family: 'FITTING',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.FITTING,
-      description: 'Inside vertical riser fitting transitioning horizontal tray run upwards.',
+      description: 'Inside vertical riser with dynamic angleDeg single source of truth for routing elevation changes.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
@@ -396,12 +558,15 @@ export class ComponentRegistry {
         angleDeg: 90,
       },
       provenance: {
-        radius: { source: 'Vertical bend catalog standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'R=600mm' },
+        radius: { source: 'Oglaend Catalog Standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'R=600mm bend radius' },
+        angleDeg: { source: 'Nominal 90 degree elevation bend', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Supports generic angleDeg' },
       },
       getLocalPorts: (params) => {
         const r = params.radius || 600;
         const w = params.width || 600;
         const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 90;
+        const aRad = (aDeg * Math.PI) / 180;
         return [
           {
             id: 'PORT_A',
@@ -416,8 +581,8 @@ export class ComponentRegistry {
           {
             id: 'PORT_B',
             name: 'Top Outlet',
-            localPosition: [0, r, 0],
-            localDirection: [-1, 0, 0],
+            localPosition: [r * Math.cos(aRad), r * Math.sin(aRad), 0],
+            localDirection: [-Math.sin(aRad), Math.cos(aRad), 0],
             localUp: [0, 0, 1],
             width: w,
             depth: d,
@@ -426,17 +591,16 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg || 90, false),
+        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 90, false),
       ],
       getBounds: (params) => {
         const r = params.radius || 600;
-        const halfW = (params.width || 600) / 2;
-        return {
-          min: [-50, -50, -halfW],
-          max: [r + 50, r + 50, halfW],
-        };
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 90;
+        return computeVerticalRiserBounds(r, w, d, aDeg, false);
       },
-      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, isOutside: false } as any),
+      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, angleDeg: params.angleDeg ?? 90, isOutside: false } as any),
     });
 
     // 8. FITTING_RISER_OUT_90
@@ -449,7 +613,10 @@ export class ComponentRegistry {
       family: 'FITTING',
       origin: ComponentOrigin.LEGACY_FITTING_LIBRARY,
       role: ComponentRole.FITTING,
-      description: 'Outside vertical riser fitting transitioning horizontal tray downwards.',
+      description: 'Outside vertical riser with dynamic angleDeg and exact centerline ↔ port endpoint invariant.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
@@ -457,19 +624,22 @@ export class ComponentRegistry {
         angleDeg: 90,
       },
       provenance: {
-        radius: { source: 'Catalog standard R=600mm', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Vertical drop' },
+        radius: { source: 'Oglaend Catalog Standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'R=600mm bend radius' },
+        angleDeg: { source: 'Nominal 90 degree downward bend', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Supports generic angleDeg' },
       },
       getLocalPorts: (params) => {
         const r = params.radius || 600;
         const w = params.width || 600;
         const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 90;
+        const aRad = (aDeg * Math.PI) / 180;
         return [
           {
             id: 'PORT_A',
             name: 'Top Inlet',
-            localPosition: [0, 0, 0],
-            localDirection: [1, 0, 0],
-            localUp: [0, 1, 0],
+            localPosition: [r, 0, 0],
+            localDirection: [0, 1, 0],
+            localUp: [0, 0, 1],
             width: w,
             depth: d,
             connectionType: 'TRAY_END',
@@ -477,8 +647,8 @@ export class ComponentRegistry {
           {
             id: 'PORT_B',
             name: 'Bottom Outlet',
-            localPosition: [r, -r, 0],
-            localDirection: [0, -1, 0],
+            localPosition: [r * Math.cos(aRad), -r * Math.sin(aRad), 0],
+            localDirection: [-Math.sin(aRad), -Math.cos(aRad), 0],
             localUp: [0, 0, 1],
             width: w,
             depth: d,
@@ -487,17 +657,16 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg || 90, true),
+        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 90, true),
       ],
       getBounds: (params) => {
         const r = params.radius || 600;
-        const halfW = (params.width || 600) / 2;
-        return {
-          min: [-50, -r - 50, -halfW],
-          max: [r + 50, 50, halfW],
-        };
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 90;
+        return computeVerticalRiserBounds(r, w, d, aDeg, true);
       },
-      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, isOutside: true } as any),
+      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, angleDeg: params.angleDeg ?? 90, isOutside: true } as any),
     });
 
     // -------------------------------------------------------------
@@ -509,12 +678,15 @@ export class ComponentRegistry {
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'EQUIP_JUNCTION_BOX',
-      name: 'Explosion-Proof Junction Box',
-      nameZh: '防爆接線箱 (Ex d/e)',
+      name: 'Explosion-Proof Junction Box (Ex d)',
+      nameZh: '防爆儀表接線箱 (JB)',
       family: 'EQUIPMENT',
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.EQUIPMENT,
-      description: 'Field explosion-proof junction box mounted on pipe rack column with Unistrut channels.',
+      description: 'NEMA 4X / Ex d cast aluminum junction box mounted on structural steel column.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_TERMINATION_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 550,
         height: 750,
@@ -557,9 +729,12 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.SUPPORT,
       description: 'Standard P1000 41x41mm slotted channel clamped to steel columns.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: { length: 850 },
       provenance: {
-        length: { source: 'Unistrut P1000 standard', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '41x41mm channel' },
+        length: { source: 'Unistrut P1000 standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '41x41mm channel' },
       },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
@@ -578,9 +753,12 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.PENETRATION,
       description: 'Rigid galvanized steel conduit protecting trunk cables rising from JB to top tier tray.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_TERMINATION_BOM,
+      includedInMcrBom: true,
       defaultParameters: { diameterMm: 50, lengthMm: 5000 },
       provenance: {
-        diameterMm: { source: 'ANSI C80.1 2-inch RGS', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '50mm OD' },
+        diameterMm: { source: 'ANSI C80.1 2-inch RGS', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '50mm OD' },
       },
       getLocalPorts: (params) => [
         {
@@ -634,16 +812,18 @@ export class ComponentRegistry {
       family: 'PENETRATION',
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.PENETRATION,
-      description: 'Roxtec RG M6x1 multi-cable transit frame with elastomeric insert modules and wedge seal.',
+      description: 'Multi-cable transit frame with elastomeric insert modules and wedge seal.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_TERMINATION_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         widthMm: 600,
         heightMm: 900,
         thicknessMm: 400,
       },
       provenance: {
-        widthMm: { source: 'Roxtec RG M6x1 Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '600x900mm nominal frame' },
-        heightMm: { source: 'Roxtec Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '900mm height' },
-        thicknessMm: { source: 'Concrete wall sleeve depth', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: '400mm wall thickness' },
+        widthMm: { source: 'Roxtec RG M6x1 sizing standard', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '600x900mm frame' },
+        thicknessMm: { source: 'Concrete wall sleeve depth', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '400mm wall thickness' },
       },
       getLocalPorts: (params) => [
         {
@@ -698,6 +878,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.EQUIPMENT,
       description: 'Standard 800x1000x2200mm floor-mounted marshalling rack with bottom trench cable entry.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_TERMINATION_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         widthMm: 1000,
         heightMm: 2200,
@@ -738,9 +921,12 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.STRUCTURE,
       description: 'Heavy structural H-beam steel column reaching up to EL +8.0m with beam connections.',
+      hasBomMetadata: true,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: { heightMm: 8000, widthMm: 350 },
       provenance: {
-        heightMm: { source: 'PIP PNC00001', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: 'Reaches EL +8.0m' },
+        heightMm: { source: 'Pipe rack standard elevation design', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Reaches EL +8.0m' },
       },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
@@ -759,9 +945,12 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.STRUCTURE,
       description: 'Reinforced concrete foundation pedestal anchoring steel columns to ground.',
+      hasBomMetadata: true,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: { widthMm: 700, heightMm: 400 },
       provenance: {
-        heightMm: { source: 'Standard civil detail', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '400mm above ground' },
+        heightMm: { source: 'Civil pedestal detail', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '400mm above ground' },
       },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
@@ -780,9 +969,12 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.STRUCTURE,
       description: 'Transverse structural beam spanning across columns supporting piping and cable trays.',
+      hasBomMetadata: true,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: { spanMm: 7800, heightMm: 250, depthMm: 180 },
       provenance: {
-        spanMm: { source: 'PIP PNC00001 Main Pipe Rack width', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: '7.8m transversal span' },
+        spanMm: { source: 'Main Pipe Rack standard width', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '7.8m transversal span' },
       },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
@@ -800,54 +992,69 @@ export class ComponentRegistry {
       family: 'STRUCTURE',
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.STRUCTURE,
-      description: 'Longitudinal structural tie beam interconnecting portal frames along bay span.',
+      description: 'Longitudinal steel stringer connecting transverse bays.',
+      hasBomMetadata: true,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: { spanMm: 6000 },
-      provenance: {
-        spanMm: { source: '6m typical column spacing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '6000mm longitudinal bay' },
-      },
+      provenance: { spanMm: { source: 'Bay longitudinal spacing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '6.0m typical bay' } },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
       getBounds: (params) => ({ min: [-100, -75, -(params.spanMm || 6000) / 2], max: [100, 75, (params.spanMm || 6000) / 2] }),
       buildGeometry: (params) => GeometryGenerators.buildStructuralStringer(params as any),
     });
 
-    // 18. OBSTACLE_PROCESS_PIPE
+    // 18. OBSTACLE_MAIN_PROCESS_PIPE
     this.register({
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
-      id: 'OBSTACLE_PROCESS_PIPE',
-      name: 'Lower Tier Process Pipe',
-      nameZh: '下層製程液體管 (EL +3.0m)',
+      id: 'OBSTACLE_MAIN_PROCESS_PIPE',
+      name: 'Main Pipe Rack Process Line (Hydrocarbon)',
+      nameZh: '主管廊碳氫製程管線',
       family: 'OBSTACLE',
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.OBSTACLE,
-      description: 'Process liquid piping running at lower tier EL +3.0m.',
-      defaultParameters: { diameterMm: 600, lengthMm: 27000, elevationMm: 3300 },
-      provenance: {
-        elevationMm: { source: 'PIP PNC00001 tier elevation', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: 'EL +3.0m tier' },
-      },
+      description: 'Heavy 500mm process pipeline running along EL +3.0m requiring minimum clearance.',
+      hasBomMetadata: true,
+      bomScope: BomScope.PROCESS_PIPING_REF,
+      includedInMcrBom: false,
+      defaultParameters: { diameterMm: 500, lengthMm: 27000, clearanceMm: 150 },
+      provenance: { diameterMm: { source: 'Process sizing estimate', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '500mm OD pipe' } },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
-      getBounds: (params) => ({ min: [-(params.lengthMm || 27000) / 2, -300, -300], max: [(params.lengthMm || 27000) / 2, 300, 300] }),
+      getBounds: (params) => {
+        const r = (params.diameterMm || 500) / 2;
+        const buf = params.clearanceMm || 150;
+        return {
+          min: [-(params.lengthMm || 27000) / 2, -r, -r],
+          max: [(params.lengthMm || 27000) / 2, r, r],
+          clearanceEnvelope: {
+            min: [-(params.lengthMm || 27000) / 2, -r - buf, -r - buf],
+            max: [(params.lengthMm || 27000) / 2, r + buf, r + buf],
+            reason: 'Flammable process line minimum clearance',
+            bufferMm: buf,
+          },
+        };
+      },
       buildGeometry: (params) => GeometryGenerators.buildPipe({ ...params, isSteam: false, axis: 'X' } as any),
     });
 
-    // 19. OBSTACLE_STEAM_PIPE
+    // 19. OBSTACLE_MAIN_STEAM_PIPE
     this.register({
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
-      id: 'OBSTACLE_STEAM_PIPE',
-      name: 'Middle Tier High-Temp Steam Pipe',
-      nameZh: '中層高溫蒸汽保溫管 (EL +4.8m)',
+      id: 'OBSTACLE_MAIN_STEAM_PIPE',
+      name: 'High-Pressure Steam Header Pipe',
+      nameZh: '主管廊高壓蒸汽管線',
       family: 'OBSTACLE',
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.OBSTACLE,
-      description: 'High-temperature steam line at middle tier EL +4.8m requiring 250mm thermal safety clearance.',
+      description: 'Thermal steam pipe with orange insulation and 250mm thermal radiant buffer envelope.',
+      hasBomMetadata: true,
+      bomScope: BomScope.PROCESS_PIPING_REF,
+      includedInMcrBom: false,
       defaultParameters: { diameterMm: 480, lengthMm: 27000, clearanceMm: 250 },
-      provenance: {
-        diameterMm: { source: 'Steam pipe with calcium silicate insulation', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '480mm total OD' },
-        clearanceMm: { source: 'Thermal buffer estimation', assumptionLevel: AssumptionLevel.UNVERIFIED, notes: '250mm unverified safety buffer' },
-      },
+      provenance: { diameterMm: { source: 'HP steam header sizing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '480mm insulated OD' } },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
       getBounds: (params) => {
@@ -878,6 +1085,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.OBSTACLE,
       description: 'Process branch pipe running across north branch rack along Z axis.',
+      hasBomMetadata: true,
+      bomScope: BomScope.PROCESS_PIPING_REF,
+      includedInMcrBom: false,
       defaultParameters: { diameterMm: 400, lengthMm: 7500 },
       provenance: { diameterMm: { source: 'Branch process sizing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '400mm OD' } },
       getLocalPorts: () => [],
@@ -897,6 +1107,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.OBSTACLE,
       description: 'Steam branch line running into south storage area.',
+      hasBomMetadata: true,
+      bomScope: BomScope.PROCESS_PIPING_REF,
+      includedInMcrBom: false,
       defaultParameters: { diameterMm: 360, lengthMm: 7500 },
       provenance: { diameterMm: { source: 'Branch steam sizing', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '360mm OD' } },
       getLocalPorts: () => [],
@@ -916,6 +1129,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.OBSTACLE,
       description: 'Thermal furnace radiant exclusion zone enforcing routing detour.',
+      hasBomMetadata: false,
+      bomScope: BomScope.PROCESS_PIPING_REF,
+      includedInMcrBom: false,
       defaultParameters: { widthMm: 6000, heightMm: 6000, depthMm: 4000 },
       provenance: { widthMm: { source: 'Furnace exclusion envelope', assumptionLevel: AssumptionLevel.UNVERIFIED, notes: 'Requires CFD verification' } },
       getLocalPorts: () => [],
@@ -938,6 +1154,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.STRUCTURE,
       description: 'Reinforced concrete control building envelope with raised access floor.',
+      hasBomMetadata: false,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: { widthMm: 11000, heightMm: 5500, depthMm: 14000 },
       provenance: { widthMm: { source: 'Control room architectural layout', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '11x5.5x14m envelope' } },
       getLocalPorts: () => [],
@@ -960,6 +1179,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.LEGACY_MCR_PROTOTYPE,
       role: ComponentRole.VISUAL,
       description: '3D cable bundle with animated flow shader displaying signal direction and segregation colors.',
+      hasBomMetadata: false,
+      bomScope: BomScope.VISUAL_ONLY,
+      includedInMcrBom: false,
       defaultParameters: {
         radiusMm: 25,
         colorHex: 0x06b6d4,
@@ -991,7 +1213,10 @@ export class ComponentRegistry {
       family: 'FITTING',
       origin: ComponentOrigin.NEW_COMPONENT,
       role: ComponentRole.FITTING,
-      description: 'Factory-formed 45-degree horizontal elbow for gradual directional routing offset.',
+      description: 'Factory-formed 45-degree horizontal elbow with dynamic angleDeg parameter support.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
@@ -999,14 +1224,14 @@ export class ComponentRegistry {
         angleDeg: 45,
       },
       provenance: {
-        radius: { source: 'NEMA VE 1 / Oglaend Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'Standard 45-deg elbow R=600mm' },
+        radius: { source: 'Standard 45-deg elbow R=600mm', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'R=600mm' },
       },
       getLocalPorts: (params) => {
         const r = params.radius || 600;
         const w = params.width || 600;
         const d = params.depth || 100;
-        const aRad = (45 * Math.PI) / 180;
-        // Outlet position and outward normal
+        const aDeg = params.angleDeg ?? 45;
+        const aRad = (aDeg * Math.PI) / 180;
         const endX = r * Math.cos(aRad);
         const endZ = -r * Math.sin(aRad);
         const outDirX = -Math.sin(aRad);
@@ -1036,18 +1261,16 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createHorizontalElbow('PORT_A', 'PORT_B', params.radius || 600, 45),
+        RouteGenerator.createHorizontalElbow('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 45),
       ],
       getBounds: (params) => {
         const r = params.radius || 600;
-        const halfW = (params.width || 600) / 2;
-        const halfD = (params.depth || 100) / 2;
-        return {
-          min: [-halfW, -halfD, -r * 0.75 - halfW],
-          max: [r + halfW, halfD, halfW],
-        };
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 45;
+        return computeHorizontalElbowBounds(r, w, d, aDeg);
       },
-      buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: 45 } as any),
+      buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: params.angleDeg ?? 45 } as any),
     });
 
     // 26. FITTING_RISER_IN_45
@@ -1060,19 +1283,23 @@ export class ComponentRegistry {
       family: 'FITTING',
       origin: ComponentOrigin.NEW_COMPONENT,
       role: ComponentRole.FITTING,
-      description: '45-degree inside vertical riser for gradual elevation change.',
+      description: '45-degree inside vertical riser with dynamic angleDeg parameter support.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
         radius: 600,
         angleDeg: 45,
       },
-      provenance: { radius: { source: 'Oglaend Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'R=600mm' } },
+      provenance: { radius: { source: 'Standard 45-deg riser R=600mm', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'R=600mm' } },
       getLocalPorts: (params) => {
         const r = params.radius || 600;
         const w = params.width || 600;
         const d = params.depth || 100;
-        const aRad = (45 * Math.PI) / 180;
+        const aDeg = params.angleDeg ?? 45;
+        const aRad = (aDeg * Math.PI) / 180;
         return [
           {
             id: 'PORT_A',
@@ -1097,17 +1324,16 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, 45, false),
+        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 45, false),
       ],
       getBounds: (params) => {
         const r = params.radius || 600;
-        const halfW = (params.width || 600) / 2;
-        return {
-          min: [-50, -50, -halfW],
-          max: [r + 50, r * 0.75 + 50, halfW],
-        };
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 45;
+        return computeVerticalRiserBounds(r, w, d, aDeg, false);
       },
-      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, angleDeg: 45, isOutside: false } as any),
+      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, angleDeg: params.angleDeg ?? 45, isOutside: false } as any),
     });
 
     // 27. FITTING_RISER_OUT_45
@@ -1120,26 +1346,30 @@ export class ComponentRegistry {
       family: 'FITTING',
       origin: ComponentOrigin.NEW_COMPONENT,
       role: ComponentRole.FITTING,
-      description: '45-degree outside vertical riser for downward slope.',
+      description: '45-degree outside vertical riser with exact centerline ↔ port endpoint invariant.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         width: 600,
         depth: 100,
         radius: 600,
         angleDeg: 45,
       },
-      provenance: { radius: { source: 'Oglaend Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'R=600mm' } },
+      provenance: { radius: { source: 'Standard 45-deg riser R=600mm', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'R=600mm' } },
       getLocalPorts: (params) => {
         const r = params.radius || 600;
         const w = params.width || 600;
         const d = params.depth || 100;
-        const aRad = (45 * Math.PI) / 180;
+        const aDeg = params.angleDeg ?? 45;
+        const aRad = (aDeg * Math.PI) / 180;
         return [
           {
             id: 'PORT_A',
             name: 'Top Inlet',
-            localPosition: [0, 0, 0],
-            localDirection: [1, 0, 0],
-            localUp: [0, 1, 0],
+            localPosition: [r, 0, 0],
+            localDirection: [0, 1, 0],
+            localUp: [0, 0, 1],
             width: w,
             depth: d,
             connectionType: 'TRAY_END',
@@ -1147,8 +1377,8 @@ export class ComponentRegistry {
           {
             id: 'PORT_B',
             name: 'Bottom Outlet',
-            localPosition: [r * Math.sin(aRad), -r * (1 - Math.cos(aRad)), 0],
-            localDirection: [Math.cos(aRad), -Math.sin(aRad), 0],
+            localPosition: [r * Math.cos(aRad), -r * Math.sin(aRad), 0],
+            localDirection: [-Math.sin(aRad), -Math.cos(aRad), 0],
             localUp: [0, 0, 1],
             width: w,
             depth: d,
@@ -1157,94 +1387,32 @@ export class ComponentRegistry {
         ];
       },
       getCenterlineRoutes: (params) => [
-        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, 45, true),
+        RouteGenerator.createVerticalRiser('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 45, true),
       ],
       getBounds: (params) => {
         const r = params.radius || 600;
-        const halfW = (params.width || 600) / 2;
-        return {
-          min: [-50, -r * 0.75 - 50, -halfW],
-          max: [r + 50, 50, halfW],
-        };
-      },
-      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, angleDeg: 45, isOutside: true } as any),
-    });
-
-    // 28. FITTING_REDUCER_CENTER
-    this.register({
-      schemaVersion: '2.0.0',
-      componentVersion: '1.0.0',
-      id: 'FITTING_REDUCER_CENTER',
-      name: 'Concentric Reducer',
-      nameZh: '同心異徑大小頭',
-      family: 'FITTING',
-      origin: ComponentOrigin.NEW_COMPONENT,
-      role: ComponentRole.FITTING,
-      description: 'Symmetric concentric reducer transitioning between different tray widths along a shared centerline.',
-      defaultParameters: {
-        inletWidth: 600,
-        outletWidth: 450,
-        depth: 100,
-        length: 500,
-      },
-      provenance: {
-        inletWidth: { source: 'Standard width transition', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '600mm to 450mm' },
-        length: { source: 'Oglaend Catalog', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '500mm standard transition length' },
-      },
-      getLocalPorts: (params) => {
-        const halfL = (params.length || 500) / 2;
-        const w1 = params.inletWidth || 600;
-        const w2 = params.outletWidth || 450;
+        const w = params.width || 600;
         const d = params.depth || 100;
-        return [
-          {
-            id: 'PORT_A',
-            name: 'Inlet Port (Large)',
-            localPosition: [0, 0, -halfL],
-            localDirection: [0, 0, -1],
-            localUp: [0, 1, 0],
-            width: w1,
-            depth: d,
-            connectionType: 'TRAY_END',
-          },
-          {
-            id: 'PORT_B',
-            name: 'Outlet Port (Small)',
-            localPosition: [0, 0, halfL],
-            localDirection: [0, 0, 1],
-            localUp: [0, 1, 0],
-            width: w2,
-            depth: d,
-            connectionType: 'TRAY_END',
-          },
-        ];
+        const aDeg = params.angleDeg ?? 45;
+        return computeVerticalRiserBounds(r, w, d, aDeg, true);
       },
-      getCenterlineRoutes: (params) => [
-        RouteGenerator.createReducer('PORT_A', 'PORT_B', params.length || 500, 0),
-      ],
-      getBounds: (params) => {
-        const maxW = Math.max(params.inletWidth || 600, params.outletWidth || 450) / 2;
-        const halfD = (params.depth || 100) / 2;
-        const halfL = (params.length || 500) / 2;
-        return {
-          min: [-maxW, -halfD, -halfL],
-          max: [maxW, halfD, halfL],
-        };
-      },
-      buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'CONCENTRIC' } as any),
+      buildGeometry: (params) => GeometryGenerators.buildVerticalRiser({ ...params, angleDeg: params.angleDeg ?? 45, isOutside: true } as any),
     });
 
-    // 29. FITTING_REDUCER_LEFT
+    // 28. FITTING_REDUCER_LEFT
     this.register({
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
       id: 'FITTING_REDUCER_LEFT',
-      name: 'Left Eccentric Reducer',
-      nameZh: '左側單邊平直大小頭',
+      name: 'Left-Hand Eccentric Reducer',
+      nameZh: '左偏異徑大小頭 (Left Reducer)',
       family: 'FITTING',
       origin: ComponentOrigin.NEW_COMPONENT,
       role: ComponentRole.FITTING,
-      description: 'Eccentric reducer maintaining straight alignment along the left rail while tapering the right side.',
+      description: 'Left-hand eccentric reducer transitioning tray widths while keeping the right side straight.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         inletWidth: 600,
         outletWidth: 450,
@@ -1252,19 +1420,19 @@ export class ComponentRegistry {
         length: 500,
       },
       provenance: {
-        inletWidth: { source: 'Standard asymmetric reducer', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Wall hugging layout' },
+        length: { source: 'NEMA VE 1 standard reducer transition', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '500mm standard transition' },
       },
       getLocalPorts: (params) => {
-        const halfL = (params.length || 500) / 2;
         const w1 = params.inletWidth || 600;
         const w2 = params.outletWidth || 450;
         const d = params.depth || 100;
-        // Left rail aligned at x = -w1/2
-        const outletCenterOffset = (w2 - w1) / 2;
+        const halfL = (params.length || 500) / 2;
+        const offset = (w2 - w1) / 2; // lateral offset of outlet center
+
         return [
           {
             id: 'PORT_A',
-            name: 'Inlet Port (Large)',
+            name: 'Wide Inlet Port A',
             localPosition: [0, 0, -halfL],
             localDirection: [0, 0, -1],
             localUp: [0, 1, 0],
@@ -1274,8 +1442,8 @@ export class ComponentRegistry {
           },
           {
             id: 'PORT_B',
-            name: 'Outlet Port (Small)',
-            localPosition: [outletCenterOffset, 0, halfL],
+            name: 'Narrow Outlet Port B',
+            localPosition: [offset, 0, halfL],
             localDirection: [0, 0, 1],
             localUp: [0, 1, 0],
             width: w2,
@@ -1302,17 +1470,20 @@ export class ComponentRegistry {
       buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'LEFT' } as any),
     });
 
-    // 30. FITTING_REDUCER_RIGHT
+    // 29. FITTING_REDUCER_CENTER
     this.register({
       schemaVersion: '2.0.0',
       componentVersion: '1.0.0',
-      id: 'FITTING_REDUCER_RIGHT',
-      name: 'Right Eccentric Reducer',
-      nameZh: '右側單邊平直大小頭',
+      id: 'FITTING_REDUCER_CENTER',
+      name: 'Concentric Center Reducer',
+      nameZh: '同心異徑大小頭 (Center Reducer)',
       family: 'FITTING',
       origin: ComponentOrigin.NEW_COMPONENT,
       role: ComponentRole.FITTING,
-      description: 'Eccentric reducer maintaining straight alignment along the right rail while tapering the left side.',
+      description: 'Concentric reducer symmetrically tapering tray width.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
       defaultParameters: {
         inletWidth: 600,
         outletWidth: 450,
@@ -1320,19 +1491,18 @@ export class ComponentRegistry {
         length: 500,
       },
       provenance: {
-        inletWidth: { source: 'Standard asymmetric reducer', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Right flush' },
+        length: { source: 'NEMA VE 1 standard reducer transition', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '500mm standard transition' },
       },
       getLocalPorts: (params) => {
-        const halfL = (params.length || 500) / 2;
         const w1 = params.inletWidth || 600;
         const w2 = params.outletWidth || 450;
         const d = params.depth || 100;
-        // Right rail aligned at x = w1/2
-        const outletCenterOffset = (w1 - w2) / 2;
+        const halfL = (params.length || 500) / 2;
+
         return [
           {
             id: 'PORT_A',
-            name: 'Inlet Port (Large)',
+            name: 'Wide Inlet Port A',
             localPosition: [0, 0, -halfL],
             localDirection: [0, 0, -1],
             localUp: [0, 1, 0],
@@ -1342,8 +1512,76 @@ export class ComponentRegistry {
           },
           {
             id: 'PORT_B',
-            name: 'Outlet Port (Small)',
-            localPosition: [outletCenterOffset, 0, halfL],
+            name: 'Narrow Outlet Port B',
+            localPosition: [0, 0, halfL],
+            localDirection: [0, 0, 1],
+            localUp: [0, 1, 0],
+            width: w2,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+        ];
+      },
+      getCenterlineRoutes: (params) => [
+        RouteGenerator.createReducer('PORT_A', 'PORT_B', params.length || 500, 0),
+      ],
+      getBounds: (params) => {
+        const w1 = params.inletWidth || 600;
+        const halfD = (params.depth || 100) / 2;
+        const halfL = (params.length || 500) / 2;
+        return {
+          min: [-w1 / 2, -halfD, -halfL],
+          max: [w1 / 2, halfD, halfL],
+        };
+      },
+      buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'CONCENTRIC' } as any),
+    });
+
+    // 30. FITTING_REDUCER_RIGHT
+    this.register({
+      schemaVersion: '2.0.0',
+      componentVersion: '1.0.0',
+      id: 'FITTING_REDUCER_RIGHT',
+      name: 'Right-Hand Eccentric Reducer',
+      nameZh: '右偏異徑大小頭 (Right Reducer)',
+      family: 'FITTING',
+      origin: ComponentOrigin.NEW_COMPONENT,
+      role: ComponentRole.FITTING,
+      description: 'Right-hand eccentric reducer transitioning tray widths while keeping the left side straight.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
+      defaultParameters: {
+        inletWidth: 600,
+        outletWidth: 450,
+        depth: 100,
+        length: 500,
+      },
+      provenance: {
+        length: { source: 'NEMA VE 1 standard reducer transition', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: '500mm standard transition' },
+      },
+      getLocalPorts: (params) => {
+        const w1 = params.inletWidth || 600;
+        const w2 = params.outletWidth || 450;
+        const d = params.depth || 100;
+        const halfL = (params.length || 500) / 2;
+        const offset = (w1 - w2) / 2; // lateral offset of outlet center
+
+        return [
+          {
+            id: 'PORT_A',
+            name: 'Wide Inlet Port A',
+            localPosition: [0, 0, -halfL],
+            localDirection: [0, 0, -1],
+            localUp: [0, 1, 0],
+            width: w1,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_B',
+            name: 'Narrow Outlet Port B',
+            localPosition: [offset, 0, halfL],
             localDirection: [0, 0, 1],
             localUp: [0, 1, 0],
             width: w2,
@@ -1384,14 +1622,17 @@ export class ComponentRegistry {
       family: 'STRUCTURE_ASSEMBLY',
       origin: ComponentOrigin.DERIVED_ASSEMBLY,
       role: ComponentRole.STRUCTURE,
-      description: 'Engineered 4-tier steel portal frame bay assembly comprising 2 columns, 2 piers, and 4 transverse cross beams (EL +3.0m, +4.8m, +6.35m, +7.15m).',
+      description: 'Engineered 4-tier steel portal frame bay assembly comprising 2 columns, 2 piers, and 4 transverse cross beams.',
+      hasBomMetadata: true,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: {
         widthSpanMm: 7800,
         heightMm: 8000,
       },
       provenance: {
-        widthSpanMm: { source: 'PIP PNC00001', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: 'Main spine 7.8m span' },
-        heightMm: { source: 'PIP PNC00001', assumptionLevel: AssumptionLevel.VERIFIED_PROJECT_REQUIREMENT, notes: 'EL +8.0m top elevation' },
+        widthSpanMm: { source: 'Main spine 7.8m span', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'Main spine 7.8m span' },
+        heightMm: { source: 'Pipe rack standard elevation', assumptionLevel: AssumptionLevel.DEMO_DEFAULT, notes: 'EL +8.0m top elevation' },
       },
       getLocalPorts: () => [
         {
@@ -1416,12 +1657,12 @@ export class ComponentRegistry {
         },
       ],
       getCenterlineRoutes: () => [],
-      getBounds: () => ({ min: [-3900, 0, -350], max: [3900, 8000, 350] }),
+      getBounds: () => ({ min: [-350, 0, -4150], max: [350, 8000, 4150] }),
       subComponents: [
-        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'COL_NORTH', relativePlacement: { position: [0, 4000, -3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
-        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'COL_SOUTH', relativePlacement: { position: [0, 4000, 3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
-        { definitionId: 'STRUCT_PIER', instanceSuffix: 'PIER_NORTH', relativePlacement: { position: [0, 200, -3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
-        { definitionId: 'STRUCT_PIER', instanceSuffix: 'PIER_SOUTH', relativePlacement: { position: [0, 200, 3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
+        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'COL_NORTH', relativePlacement: { position: [0, 0, -3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
+        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'COL_SOUTH', relativePlacement: { position: [0, 0, 3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
+        { definitionId: 'STRUCT_PIER', instanceSuffix: 'PIER_NORTH', relativePlacement: { position: [0, 0, -3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
+        { definitionId: 'STRUCT_PIER', instanceSuffix: 'PIER_SOUTH', relativePlacement: { position: [0, 0, 3800], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_CROSS_BEAM', instanceSuffix: 'BEAM_3M', relativePlacement: { position: [0, 3000, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_CROSS_BEAM', instanceSuffix: 'BEAM_4_8M', relativePlacement: { position: [0, 4800, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_CROSS_BEAM', instanceSuffix: 'BEAM_6_4M', relativePlacement: { position: [0, 6350, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
@@ -1431,9 +1672,9 @@ export class ComponentRegistry {
         const group = new THREE.Group();
         [-3.8, 3.8].forEach((z) => {
           const col = GeometryGenerators.buildStructuralColumn({ heightMm: 8000, widthMm: 350 });
-          col.position.set(0, 4.0, z);
+          col.position.set(0, 0, z);
           const pier = GeometryGenerators.buildStructuralPier({ widthMm: 700, heightMm: 400 });
-          pier.position.set(0, 0.2, z);
+          pier.position.set(0, 0, z);
           group.add(col, pier);
         });
         [3.0, 4.8, 6.35, 7.15].forEach((ey) => {
@@ -1456,6 +1697,9 @@ export class ComponentRegistry {
       origin: ComponentOrigin.DERIVED_ASSEMBLY,
       role: ComponentRole.STRUCTURE,
       description: 'Branch pipe rack portal bay with longitudinal stringers for lateral piping and tray feeds.',
+      hasBomMetadata: true,
+      bomScope: BomScope.STRUCTURAL_REF,
+      includedInMcrBom: false,
       defaultParameters: {
         widthSpanMm: 2700,
         heightMm: 8000,
@@ -1466,10 +1710,10 @@ export class ComponentRegistry {
       },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
-      getBounds: () => ({ min: [-1500, 0, -3000], max: [1500, 8000, 3000] }),
+      getBounds: () => ({ min: [-1500, 0, -3200], max: [1500, 8000, 3200] }),
       subComponents: [
-        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'B_COL_L', relativePlacement: { position: [-1200, 4000, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
-        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'B_COL_R', relativePlacement: { position: [1200, 4000, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
+        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'B_COL_L', relativePlacement: { position: [-1200, 0, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
+        { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'B_COL_R', relativePlacement: { position: [1200, 0, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_CROSS_BEAM', instanceSuffix: 'B_BEAM_TOP', relativePlacement: { position: [0, 7150, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_STRINGER', instanceSuffix: 'B_STR_L', relativePlacement: { position: [-1200, 7150, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_STRINGER', instanceSuffix: 'B_STR_R', relativePlacement: { position: [1200, 7150, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
@@ -1478,20 +1722,18 @@ export class ComponentRegistry {
         const group = new THREE.Group();
         [-1.2, 1.2].forEach((bx) => {
           const col = GeometryGenerators.buildStructuralColumn({ heightMm: 8000, widthMm: 300 });
-          col.position.set(bx, 4.0, 0);
+          col.position.set(bx, 0, 0);
           group.add(col);
         });
-        [3.0, 4.8, 6.35, 7.15].forEach((ey) => {
-          const bm = GeometryGenerators.buildStructuralCrossBeam({ spanMm: 2700 });
-          bm.position.set(0, ey, 0);
-          group.add(bm);
-        });
-        [6.35, 7.15].forEach((ey) => {
-          const s1 = GeometryGenerators.buildStructuralStringer({ spanMm: 6000 });
-          s1.position.set(-1.2, ey, 0);
-          const s2 = GeometryGenerators.buildStructuralStringer({ spanMm: 6000 });
-          s2.position.set(1.2, ey, 0);
-          group.add(s1, s2);
+        const crossBeam = GeometryGenerators.buildStructuralCrossBeam({ spanMm: 2700 });
+        crossBeam.position.set(0, 7.15, 0);
+        crossBeam.rotation.y = Math.PI / 2;
+        group.add(crossBeam);
+
+        [-1.2, 1.2].forEach((sx) => {
+          const str = GeometryGenerators.buildStructuralStringer({ spanMm: 6000 });
+          str.position.set(sx, 7.15, 0);
+          group.add(str);
         });
         return group;
       },

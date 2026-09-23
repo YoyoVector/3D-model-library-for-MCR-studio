@@ -22,6 +22,7 @@ import type {
 export class ComponentInstance {
   public readonly instanceId: string;
   public readonly definition: ComponentDefinition;
+  public parentAssemblyInstanceId?: string;
   private _effectiveParameters: Record<string, any>;
   private _placement: EngineeringPlacement;
 
@@ -35,10 +36,12 @@ export class ComponentInstance {
     instanceId: string,
     definition: ComponentDefinition,
     parameterOverrides: Record<string, any> = {},
-    placement?: Partial<EngineeringPlacement>
+    placement?: Partial<EngineeringPlacement>,
+    parentAssemblyInstanceId?: string
   ) {
     this.instanceId = instanceId;
     this.definition = definition;
+    this.parentAssemblyInstanceId = parentAssemblyInstanceId;
     this._effectiveParameters = {
       ...definition.defaultParameters,
       ...parameterOverrides,

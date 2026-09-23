@@ -1,0 +1,6 @@
+{
+  "name": "MCR-Studio Parametric Engineering 3D Component Library",
+  "description": "Production-grade parametric 3D engineering component library with mate & placement engine, dynamic connection ports, analytic centerline routing, and BOM verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

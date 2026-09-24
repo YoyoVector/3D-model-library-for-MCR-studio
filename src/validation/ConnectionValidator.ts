@@ -7,7 +7,7 @@ import type { ComponentInstance } from '../core/Instance.ts';
 
 export interface ConnectionValidationResult {
   valid: boolean;
-  code: 'OK' | 'WIDTH_MISMATCH' | 'DEPTH_MISMATCH' | 'TYPE_MISMATCH' | 'PORT_NOT_FOUND';
+  code: 'OK' | 'WIDTH_MISMATCH' | 'DEPTH_MISMATCH' | 'TYPE_MISMATCH' | 'STYLE_MISMATCH' | 'PORT_NOT_FOUND';
   error?: string;
   recommendation?: string;
   details?: {
@@ -76,6 +76,22 @@ export class ConnectionValidator {
         code: 'DEPTH_MISMATCH',
         error: `深度/邊高不相符 (Depth Mismatch: ${portA.depth}mm != ${portB.depth}mm)`,
         recommendation: '請確認托架邊高規格一致',
+        details: {
+          portA: { id: portA.id, width: portA.width, depth: portA.depth, type: portA.connectionType },
+          portB: { id: portB.id, width: portB.width, depth: portB.depth, type: portB.connectionType },
+        },
+      };
+    }
+
+    // Check physical tray style (ladder I-rail vs ventilated channel faces cannot be spliced)
+    const styleA = portA.connectionFace?.style;
+    const styleB = portB.connectionFace?.style;
+    if (styleA && styleB && styleA !== styleB) {
+      return {
+        valid: false,
+        code: 'STYLE_MISMATCH',
+        error: `托架型式不相符 (Tray Style Mismatch: ${styleA} vs ${styleB})`,
+        recommendation: '梯型與沖底型端面構造不同，請選用同一型錄系列之配件',
         details: {
           portA: { id: portA.id, width: portA.width, depth: portA.depth, type: portA.connectionType },
           portB: { id: portB.id, width: portB.width, depth: portB.depth, type: portB.connectionType },

@@ -148,6 +148,7 @@ export class ComponentInstance {
         width: lp.width,
         depth: lp.depth,
         connectionType: lp.connectionType,
+        ...(lp.connectionFace ? { connectionFace: { ...lp.connectionFace } } : {}),
       };
     });
 

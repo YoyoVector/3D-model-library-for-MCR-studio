@@ -19,124 +19,157 @@ export interface TestSuiteReport {
     cases: TestCaseResult[];
 }
 /**
- * Automated Acceptance Test Suite for MCR-Studio Parametric 3D Library (Cases A ~ V).
+ * Automated Acceptance Test Suite for MCR-Studio Parametric 3D Library.
+ * Cases A–V: engine invariants. Cases W–AK: vendor catalog geometry and physical assembly.
  */
 export declare class AcceptanceTestSuite {
     static runAll(): TestSuiteReport;
     /**
-     * Case A: 標準對接測試 (Straight 600x100 Port B -> Elbow 90° 600x100 Port A)
+     * Case A: 標準對接測試 (Ladder straight 600×150 PORT_B → Elbow 90° PORT_A from the same profile)
      */
     static testCaseA(): TestCaseResult;
     /**
-     * Case B: 尺寸不符攔截 (Straight 600x100 Port B -> Elbow 450x100 Port A)
+     * Case B: 尺寸不符攔截 (Straight 600 → Elbow 450)
      */
     static testCaseB(): TestCaseResult;
     /**
-     * Case C: 深度不符攔截 (Straight 600x100 Port B -> Elbow 600x150 Port A)
+     * Case C: 深度不符攔截 (Straight 600×100 → Elbow 600×150)
      */
     static testCaseC(): TestCaseResult;
     /**
-     * Case D: 連接類型不符攔截 (Tray End -> Gland Port)
+     * Case D: 連接類型 / 托架型式不符攔截 (Tray End → Gland; Ladder → Ventilated)
      */
     static testCaseD(): TestCaseResult;
     /**
-     * Case E: 異徑對接成功 (Straight 600 -> Reducer Left Port A, Reducer Port B -> Straight 450)
+     * Case E: 異徑對接成功 (Ladder 600 → Reducer 600→300 → Ladder 300)
      */
     static testCaseE(): TestCaseResult;
     /**
-     * Case F: Mate 放置數值正確性 (Position & Quaternion of mated instance B)
+     * Case F: Mate 放置數值正確性
      */
     static testCaseF(): TestCaseResult;
     /**
-     * Case G: 鏈式放置累積誤差 (Chain 10 Straight 3m trays -> Port B at Z = 30,000mm)
+     * Case G: 鏈式放置累積誤差 (10 × 3 m straights → 30 m)
      */
     static testCaseG(): TestCaseResult;
     /**
-     * Case H: JSON 匯出與還原 (JsonExporter ComponentDefinition export round-trip)
+     * Case H: JSON 匯出
      */
     static testCaseH(): TestCaseResult;
     /**
-     * Case I: 迴轉環路封閉檢查 (4 x Elbow 90° forming a closed square loop)
+     * Case I: 4 × 90° elbows (catalog 125 mm tangents) close a loop.
      */
     static testCaseI(): TestCaseResult;
     /**
-     * Case J: 避讓包絡體計算 (OBSTACLE_MAIN_PROCESS_PIPE clearance envelope)
+     * Case J: 避讓包絡體計算
      */
     static testCaseJ(): TestCaseResult;
     /**
-     * Case K: 型錄規格邊界檢查 (Check width conformance for 550mm)
+     * Case K: 通用型錄規格邊界檢查 (generic NEMA-style presets)
      */
     static testCaseK(): TestCaseResult;
     /**
-     * Case L: 解析中心線長度公式精確度 (Straight & Elbow exact analytic formula)
+     * Case L: 解析中心線長度 (generic pure arc and catalog arc + tangents)
      */
     static testCaseL(): TestCaseResult;
     /**
-     * Case M: Assembly BOM 驗證 (Double-counting fixture verification)
+     * Case M: Assembly BOM 驗證 (Double-counting fixture) + one BOM line per size
      */
     static testCaseM(): TestCaseResult;
     /**
-     * Case N: 視覺回歸確效 (Deterministic Visual Baseline Regression of 8 Legacy Models)
+     * Case N: 視覺回歸確效 (deterministic baseline of 8 legacy-ID models)
      */
     static testCaseN(): TestCaseResult;
     /**
-     * Case O: 通用角度單一真實來源 (Generic Angle 37.5° SOT Verification)
+     * Case O: 通用角度單一真實來源 (Generic angle 37.5°)
      */
     static testCaseO(): TestCaseResult;
     /**
-     * Case P: 參數連動一致性 (Elbow R: 300 -> 600mm, Angle 45 -> 90°, all derived states sync)
+     * Case P: 參數連動一致性 (R 300 → 600, angle 45 → 90)
      */
     static testCaseP(): TestCaseResult;
     /**
-     * Invariant Test Q: Centerline ↔ Port Endpoint Invariant
-     * Verifies for all routing-capable components:
-     * centerline.firstPoint == fromPort.localPosition
-     * centerline.lastPoint  == toPort.localPosition
+     * Case Q: Centerline ↔ Port endpoint invariant (all components, all variants)
      */
     static testCaseQ_CenterlinePortEndpoints(): TestCaseResult;
     /**
-     * Invariant Test R: Bounds ↔ Geometry Consistency Invariant
-     * Rigorously checks minX, minY, minZ, maxX, maxY, maxZ between getBounds() and THREE.Box3.
+     * Case R: Bounds ↔ Geometry consistency (every tray component × variant + structural set)
      */
     static testCaseR_BoundsConsistency(): TestCaseResult;
     /**
-     * Invariant Test S: Port Frame Handedness (Right-handed orthonormal basis, det = +1.0)
+     * Case S: Port frame handedness (right-handed orthonormal basis, det = +1)
      */
     static testCaseS_PortFrameHandedness(): TestCaseResult;
     /**
-     * Invariant Test T: Eccentric Reducer Physical Analytic Length
+     * Case T: Reducer physical centerline length (generic linear taper and catalog 200+200+200)
      */
     static testCaseT_EccentricReducerLength(): TestCaseResult;
     /**
-     * Invariant Test U: Tee Physical Branch Centerline (Straight + Arc + Straight)
+     * Case U: Tee branch centerline (catalog p.9): straight + concentric R+W/2 arc + straight.
      */
     static testCaseU_TeePhysicalCenterline(): TestCaseResult;
     /**
-     * Invariant Test V: Derived State Export Snapshot
+     * Case V: Derived state export snapshot
      */
     static testCaseV_DerivedStateExport(): TestCaseResult;
     /**
-     * Case W: Catalog Profile Test A (Page 27–37: Ventilated Through Type 100W x 50H)
+     * Case W: Ventilated profile A (PDF p.27–37) — every catalog component, joints physically valid.
      */
     static testCaseW_CatalogProfileA(): TestCaseResult;
     /**
-     * Case X: Catalog Profile Test B (Page 38–47: Ventilated Through Type 300W x 100H)
+     * Case X: Ventilated profile B (PDF p.38–47)
      */
     static testCaseX_CatalogProfileB(): TestCaseResult;
     /**
-     * Case Y: Horizontal Cross Fitting Validation (Page 10)
+     * Case Y: Horizontal cross (PDF p.10): ports, 6 routes, catalog spans, radius-driven curved corners.
      */
     static testCaseY_HorizontalCross(): TestCaseResult;
     /**
-     * Case Z: Generic Angle Vendor Standards (30°, 45°, 60°, 90° from Catalog)
+     * Case Z: every catalog angle (30/45/60/90) for horizontal and vertical bends with 125 tangents
      */
-    static testCaseZ_GenericAngleVendor(): TestCaseResult;
+    static testCaseZ_CatalogAngles(): TestCaseResult;
     /**
-     * Case AA: Vendor Dimension Formulas Reality Check
+     * Case AA: Vendor dimension formulas checked on LIBRARY OUTPUT (not constants).
      */
     static testCaseAA_VendorDimensionFormulas(): TestCaseResult;
     /**
-     * Case AB: Profile Consistency Invariant & Provenance Integrity
+     * Case AB: Profile data vs the catalog tables (hand-entered catalog facts).
      */
-    static testCaseAB_ProfileConsistencyInvariant(): TestCaseResult;
+    static testCaseAB_ProfileCatalogIntegrity(): TestCaseResult;
+    /**
+     * Case AC: Golden fixtures from the vendor PDF (ports, route lengths, bounds, dimensions).
+     */
+    static testCaseAC_GoldenFixtures(): TestCaseResult;
+    /**
+     * Case AD: Tee (PDF p.9) must have visibly curved transitions — checked on the mesh.
+     */
+    static testCaseAD_TeeCurvedTransition(): TestCaseResult;
+    /**
+     * Case AE: Cross (PDF p.10) curved corners in all four quadrants, both tray styles.
+     */
+    static testCaseAE_CrossCurvedCorners(): TestCaseResult;
+    /**
+     * Case AF: Profile propagation — H=150 (and W, R, T, style) reach every ladder component.
+     */
+    static testCaseAF_ProfilePropagation(): TestCaseResult;
+    /**
+     * Case AG: Radius semantics — catalog R → centerline radius → outer radius, measured on geometry.
+     */
+    static testCaseAG_RadiusSemantics(): TestCaseResult;
+    /**
+     * Case AH: Geometry terminates exactly on every TRAY_END port plane with the declared face.
+     */
+    static testCaseAH_ConnectionFaceTermination(): TestCaseResult;
+    /**
+     * Case AI: Physical assembly regression — the 12 mating scenarios.
+     */
+    static testCaseAI_AssemblyRegression(): TestCaseResult;
+    /**
+     * Case AJ: Negative controls — the assembly checks must catch overlap, gap, rotation and size errors.
+     */
+    static testCaseAJ_NegativeControls(): TestCaseResult;
+    /**
+     * Case AK: Assembly demos (viewer) — joints valid and end positions equal the hand-derived layout.
+     */
+    static testCaseAK_AssemblyDemos(): TestCaseResult;
 }

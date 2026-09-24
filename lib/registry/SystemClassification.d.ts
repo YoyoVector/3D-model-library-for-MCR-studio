@@ -20,6 +20,8 @@ export type ComponentSubCategory = 'STRAIGHT' | 'ELBOW' | 'BRANCH' | 'RISER' | '
 export declare function getComponentSubCategory(compId: string): ComponentSubCategory;
 export declare const SUB_CATEGORY_NAMES: Record<ComponentSubCategory, string>;
 /**
- * Returns which tray system categories a component is compatible with.
+ * Returns which tray system categories a component belongs to.
+ * Tray series membership is derived from the vendor profiles' catalog component lists
+ * (single source of truth), not maintained by hand.
  */
 export declare function getComponentSystemCategories(compId: string): TraySystemCategory[];

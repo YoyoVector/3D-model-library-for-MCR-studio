@@ -6,15 +6,38 @@
 import * as THREE from 'three';
 import { Units } from '../core/Units.ts';
 import { Materials } from './Materials.ts';
+import {
+  straightLayout,
+  horizontalBendLayout,
+  verticalBendLayout,
+  teeLayout,
+  crossLayout,
+  reducerLayout,
+  type TrayLayout,
+} from './TrayLayouts.ts';
+import { buildTrayLayoutGroup, type TrayMeshOptions } from './TrayMeshBuilder.ts';
 
 /**
  * Procedural Geometry Generator for Parametric 3D Engineering Components.
  * Generates true 3D meshes with exact vertex placement from millimeter parameters.
  * Scale of all returned groups is strictly (1, 1, 1).
+ *
+ * Cable tray and fitting builders delegate to the single engineering formula layer
+ * (TrayLayouts.ts): the mesh is built from the same layout object that produces the
+ * component's ports, centerline routes and bounds.
  */
 export class GeometryGenerators {
   /**
-   * Builds a straight ladder tray with rungs and end splice plates.
+   * Builds the mesh group of any resolved tray layout.
+   */
+  static buildTrayLayout(layout: TrayLayout, options: TrayMeshOptions = {}): THREE.Group {
+    return buildTrayLayoutGroup(layout, options);
+  }
+
+  /**
+   * Straight ladder / ventilated-through tray (catalog PDF p.4, p.30, p.41).
+   * Splice plates are optional small-accessory visuals (default off); they are tagged as
+   * accessories and never count as tray body.
    */
   static buildStraightTray(params: {
     width: number; // mm
@@ -23,66 +46,15 @@ export class GeometryGenerators {
     rungSpacing?: number; // mm
     hasSplicePlates?: boolean;
     hasDivider?: boolean;
+    dividerHeight?: number;
+    trayStyle?: string;
     isIS?: boolean;
   }): THREE.Group {
-    const group = new THREE.Group();
-    const w = Units.mmToM(params.width);
-    const d = Units.mmToM(params.depth);
-    const l = Units.mmToM(params.length);
-    const t = 0.04; // 40mm rail flange/thickness
-    const rungSpacingM = Units.mmToM(params.rungSpacing || 250);
-    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
-
-    // Left and right side rails
-    const railGeo = new THREE.BoxGeometry(t, d, l);
-    const railL = new THREE.Mesh(railGeo, mat);
-    railL.position.set(-w / 2, 0, 0);
-    railL.castShadow = true;
-    railL.receiveShadow = true;
-
-    const railR = new THREE.Mesh(railGeo, mat);
-    railR.position.set(w / 2, 0, 0);
-    railR.castShadow = true;
-    railR.receiveShadow = true;
-
-    group.add(railL, railR);
-
-    // Rungs along the length
-    const numRungs = Math.max(2, Math.floor(l / rungSpacingM));
-    const rungD = 0.02; // 20mm height
-    const rungW = 0.035; // 35mm width
-    const rungGeo = new THREE.BoxGeometry(w, rungD, rungW);
-
-    for (let i = 0; i <= numRungs; i++) {
-      const z = -l / 2 + (l / numRungs) * i;
-      const rung = new THREE.Mesh(rungGeo, mat);
-      rung.position.set(0, -d / 2 + rungD / 2, z);
-      rung.castShadow = true;
-      group.add(rung);
-    }
-
-    // Optional longitudinal divider
-    if (params.hasDivider) {
-      const divGeo = new THREE.BoxGeometry(0.005, d, l);
-      const divider = new THREE.Mesh(divGeo, Materials.Divider);
-      divider.position.set(0, 0, 0);
-      group.add(divider);
-    }
-
-    // End splice plates
-    if (params.hasSplicePlates !== false) {
-      const spL = this.buildSplicePlateMesh(d);
-      spL.position.set(-w / 2, 0, l / 2);
-      const spR = this.buildSplicePlateMesh(d);
-      spR.position.set(w / 2, 0, l / 2);
-      group.add(spL, spR);
-    }
-
-    return group;
+    return buildTrayLayoutGroup(straightLayout(params), { isIS: params.isIS });
   }
 
   /**
-   * Builds an individual splice plate assembly.
+   * Builds an individual splice plate assembly (accessory visual).
    */
   static buildSplicePlateMesh(depthM: number = 0.1): THREE.Group {
     const group = new THREE.Group();
@@ -150,266 +122,74 @@ export class GeometryGenerators {
   }
 
   /**
-   * Generic Angle Horizontal Elbow (45°, 90°, or non-standard).
+   * Horizontal elbow of any angle (catalog PDF p.5–8). `radius` is the catalog inner radius R;
+   * the routing centerline radius is R + W/2. Optional straight tangents (catalog 125 mm).
    */
   static buildHorizontalElbow(params: {
     width: number; // mm
     depth: number; // mm
-    radius: number; // mm
-    angleDeg: number; // deg (e.g. 45, 90, 30)
+    radius: number; // mm (catalog inner radius R)
+    angleDeg: number; // deg (e.g. 30, 45, 60, 90)
+    tangentLength?: number; // mm
+    trayStyle?: string;
     isIS?: boolean;
   }): THREE.Group {
-    const group = new THREE.Group();
-    const w = Units.mmToM(params.width);
-    const d = Units.mmToM(params.depth);
-    const r = Units.mmToM(params.radius);
-    const angleRad = Units.degToRad(params.angleDeg);
-    const t = 0.04;
-    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
-
-    // Inner and Outer curved rails
-    const innerRail = this.createArcRail(r - w / 2, t, d, 0, angleRad, mat);
-    const outerRail = this.createArcRail(r + w / 2, t, d, 0, angleRad, mat);
-    group.add(innerRail, outerRail);
-
-    // Radial rungs
-    const stepDeg = 15;
-    const count = Math.max(2, Math.round(params.angleDeg / stepDeg));
-    const rungD = 0.02;
-    const rungW = 0.035;
-
-    for (let i = 1; i < count; i++) {
-      const a = (i * angleRad) / count;
-      const rung = new THREE.Mesh(new THREE.BoxGeometry(w, rungD, rungW), mat);
-      rung.position.set(r * Math.cos(a), -d / 2 + rungD / 2, -r * Math.sin(a));
-      rung.rotation.y = a;
-      group.add(rung);
-    }
-
-    return group;
+    return buildTrayLayoutGroup(horizontalBendLayout(params, params.angleDeg ?? 90), { isIS: params.isIS });
   }
 
   /**
-   * Helper to create an extruded curved rail mesh.
-   */
-  private static createArcRail(
-    radius: number,
-    thickness: number,
-    depth: number,
-    angleStart: number,
-    angleEnd: number,
-    material: THREE.Material
-  ): THREE.Mesh {
-    const shape = new THREE.Shape();
-    shape.absarc(0, 0, radius + thickness / 2, angleStart, angleEnd, false);
-    shape.lineTo((radius - thickness / 2) * Math.cos(angleEnd), (radius - thickness / 2) * Math.sin(angleEnd));
-    shape.absarc(0, 0, radius - thickness / 2, angleEnd, angleStart, true);
-    shape.lineTo((radius + thickness / 2) * Math.cos(angleStart), (radius + thickness / 2) * Math.sin(angleStart));
-
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled: false, curveSegments: 32 });
-    geo.translate(0, 0, -depth / 2);
-    const mesh = new THREE.Mesh(geo, material);
-    mesh.rotation.x = -Math.PI / 2; // Align curvature with rungs and centerline in negative Z
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    return mesh;
-  }
-
-  /**
-   * Horizontal Tee.
+   * Horizontal Tee (catalog PDF p.9): radius-R curved transitions from the main run into the
+   * branch, 125 mm tangents. Main span = W + 2R + 2T, branch projection = W/2 + R + T.
    */
   static buildHorizontalTee(params: {
     width: number; // mm
     depth: number; // mm
-    length: number; // mm (main run)
-    branchLength: number; // mm
+    radius?: number; // mm (catalog inner radius R)
+    tangentLength?: number; // mm
+    length?: number; // mm (legacy alias: main span)
+    branchLength?: number; // mm (legacy alias: branch projection)
+    trayStyle?: string;
     isIS?: boolean;
   }): THREE.Group {
-    const group = new THREE.Group();
-    const w = Units.mmToM(params.width);
-    const d = Units.mmToM(params.depth);
-    const l = Units.mmToM(params.length);
-    const bl = Units.mmToM(params.branchLength);
-    const t = 0.04;
-    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
-
-    // Main run back rail (continuous)
-    const railTop = new THREE.Mesh(new THREE.BoxGeometry(l, d, t), mat);
-    railTop.position.set(0, 0, -w / 2);
-
-    // Main run front rails (split by branch)
-    const frontSegL = l / 2 - w / 2;
-    const railBotL = new THREE.Mesh(new THREE.BoxGeometry(frontSegL, d, t), mat);
-    railBotL.position.set(-l / 4 - w / 4, 0, w / 2);
-
-    const railBotR = new THREE.Mesh(new THREE.BoxGeometry(frontSegL, d, t), mat);
-    railBotR.position.set(l / 4 + w / 4, 0, w / 2);
-
-    // Branch side rails
-    const brLen = bl - w / 2;
-    const railBrL = new THREE.Mesh(new THREE.BoxGeometry(t, d, brLen), mat);
-    railBrL.position.set(-w / 2, 0, w / 2 + brLen / 2);
-
-    const railBrR = new THREE.Mesh(new THREE.BoxGeometry(t, d, brLen), mat);
-    railBrR.position.set(w / 2, 0, w / 2 + brLen / 2);
-
-    group.add(railTop, railBotL, railBotR, railBrL, railBrR);
-
-    // Main run rungs
-    const rungD = 0.02;
-    const rungW = 0.035;
-    for (let x = -l / 2 + 0.1; x <= l / 2 - 0.1; x += 0.2) {
-      if (Math.abs(x) < w / 2 - 0.05) continue;
-      const rung = new THREE.Mesh(new THREE.BoxGeometry(w, rungD, rungW), mat);
-      rung.rotation.y = Math.PI / 2;
-      rung.position.set(x, -d / 2 + rungD / 2, 0);
-      group.add(rung);
-    }
-
-    // Branch rungs
-    for (let z = w / 2 + 0.1; z <= bl - 0.1; z += 0.2) {
-      const rung = new THREE.Mesh(new THREE.BoxGeometry(w, rungD, rungW), mat);
-      rung.position.set(0, -d / 2 + rungD / 2, z);
-      group.add(rung);
-    }
-
-    return group;
+    return buildTrayLayoutGroup(teeLayout(params), { isIS: params.isIS });
   }
 
   /**
-   * Generic Angle Vertical Riser (Inside or Outside, 45° or 90°).
+   * Vertical inside (rising, p.11–14) or outside (falling, p.15–18) bend.
+   * `radius` is the catalog inner radius R; the routing centerline radius is R + H/2.
    */
   static buildVerticalRiser(params: {
     width: number; // mm
     depth: number; // mm
-    radius: number; // mm
+    radius: number; // mm (catalog inner radius R)
     angleDeg: number; // deg
+    tangentLength?: number; // mm
     isOutside?: boolean;
+    trayStyle?: string;
     isIS?: boolean;
   }): THREE.Group {
-    const group = new THREE.Group();
-    const w = Units.mmToM(params.width);
-    const d = Units.mmToM(params.depth);
-    const r = Units.mmToM(params.radius);
-    const angleRad = Units.degToRad(params.angleDeg);
-    const t = 0.04;
-    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
-
-    const ySign = params.isOutside ? -1 : 1;
-
-    // Shape for vertical arc rail
-    const shape = new THREE.Shape();
-    shape.absarc(0, 0, r + d / 2, 0, angleRad, false);
-    shape.lineTo((r - d / 2) * Math.cos(angleRad), (r - d / 2) * Math.sin(angleRad));
-    shape.absarc(0, 0, r - d / 2, angleRad, 0, true);
-    shape.lineTo(r + d / 2, 0);
-
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 32 });
-    geo.translate(0, 0, -t / 2);
-    if (params.isOutside) {
-      geo.scale(1, -1, 1);
-    }
-
-    const railL = new THREE.Mesh(geo, mat);
-    railL.position.z = -w / 2;
-    const railR = new THREE.Mesh(geo, mat);
-    railR.position.z = w / 2;
-    group.add(railL, railR);
-
-    // Rungs along vertical curve
-    const stepDeg = 15;
-    const count = Math.max(2, Math.round(params.angleDeg / stepDeg));
-    const rungD = 0.02;
-    const rungW = 0.035;
-
-    for (let i = 1; i < count; i++) {
-      const a = (i * angleRad) / count;
-      const rPos = r - d / 2 + rungD / 2;
-      const rung = new THREE.Mesh(new THREE.BoxGeometry(rungW, rungD, w), mat);
-      rung.position.set(rPos * Math.cos(a), ySign * rPos * Math.sin(a), 0);
-      rung.rotation.z = ySign * (a + Math.PI / 2);
-      group.add(rung);
-    }
-
-    return group;
+    return buildTrayLayoutGroup(verticalBendLayout(params, params.angleDeg ?? 90, !!params.isOutside), {
+      isIS: params.isIS,
+    });
   }
 
   /**
-   * Concentric, Left Eccentric, or Right Eccentric Reducer.
+   * Centre, left or right reducer (catalog PDF p.19–21): T straight at W1, taper, T straight at W2.
+   * LEFT keeps the left rail straight when viewed from the wide end toward the narrow end.
    */
   static buildReducer(params: {
     inletWidth: number; // mm (Port A)
     outletWidth: number; // mm (Port B)
     depth: number; // mm
     length: number; // mm
+    tangentLength?: number; // mm
     type: 'CONCENTRIC' | 'LEFT' | 'RIGHT';
+    trayStyle?: string;
     isIS?: boolean;
   }): THREE.Group {
-    const group = new THREE.Group();
-    const w1 = Units.mmToM(params.inletWidth);
-    const w2 = Units.mmToM(params.outletWidth);
-    const d = Units.mmToM(params.depth);
-    const l = Units.mmToM(params.length);
-    const t = 0.04;
-    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
-
-    let xLeft1 = -w1 / 2;
-    let xLeft2 = -w2 / 2;
-    let xRight1 = w1 / 2;
-    let xRight2 = w2 / 2;
-
-    if (params.type === 'LEFT') {
-      // Left side stays straight (offset 0), right side tapers
-      xLeft1 = -w1 / 2;
-      xLeft2 = -w1 / 2;
-      xRight1 = w1 / 2;
-      xRight2 = -w1 / 2 + w2;
-    } else if (params.type === 'RIGHT') {
-      // Right side stays straight, left side tapers
-      xRight1 = w1 / 2;
-      xRight2 = w1 / 2;
-      xLeft1 = -w1 / 2;
-      xLeft2 = w1 / 2 - w2;
-    }
-
-    // Angled left rail
-    const dxL = xLeft2 - xLeft1;
-    const railLenL = Math.hypot(dxL, l);
-    const angleL = Math.atan2(dxL, l);
-    const railL = new THREE.Mesh(new THREE.BoxGeometry(t, d, railLenL), mat);
-    railL.position.set((xLeft1 + xLeft2) / 2, 0, 0);
-    railL.rotation.y = -angleL;
-
-    // Angled right rail
-    const dxR = xRight2 - xRight1;
-    const railLenR = Math.hypot(dxR, l);
-    const angleR = Math.atan2(dxR, l);
-    const railR = new THREE.Mesh(new THREE.BoxGeometry(t, d, railLenR), mat);
-    railR.position.set((xRight1 + xRight2) / 2, 0, 0);
-    railR.rotation.y = -angleR;
-
-    group.add(railL, railR);
-
-    // Variable width rungs
-    const numRungs = Math.max(2, Math.floor(l / 0.2));
-    const rungD = 0.02;
-    const rungW = 0.035;
-
-    for (let i = 0; i <= numRungs; i++) {
-      const frac = i / numRungs;
-      const z = -l / 2 + l * frac;
-      const curLeft = xLeft1 + (xLeft2 - xLeft1) * frac;
-      const curRight = xRight1 + (xRight2 - xRight1) * frac;
-      const curW = curRight - curLeft;
-      const curMidX = (curLeft + curRight) / 2;
-
-      const rung = new THREE.Mesh(new THREE.BoxGeometry(curW, rungD, rungW), mat);
-      rung.position.set(curMidX, -d / 2 + rungD / 2, z);
-      group.add(rung);
-    }
-
-    return group;
+    return buildTrayLayoutGroup(reducerLayout(params, params.type), { isIS: params.isIS });
   }
+
 
   /**
    * Junction Box (Ex d / Ex e industrial enclosure).
@@ -698,76 +478,18 @@ export class GeometryGenerators {
   }
 
   /**
-   * Horizontal Cross (Page 10 in Vendor Catalog).
-   * 4 symmetrical branches along X and Z axes with corner rails and rungs.
+   * Horizontal Cross (catalog PDF p.10): four radius-R curved corners, 125 mm tangents,
+   * span = W + 2R + 2T along both axes.
    */
   static buildHorizontalCross(params: {
     width: number; // mm
     depth: number; // mm
-    radius?: number; // mm
-    length?: number; // mm (full span along both axes, typically W + 2*R + 250)
+    radius?: number; // mm (catalog inner radius R)
+    length?: number; // mm (legacy alias: full span)
     tangentLength?: number; // mm
+    trayStyle?: string;
     isIS?: boolean;
   }): THREE.Group {
-    const group = new THREE.Group();
-    const w = Units.mmToM(params.width);
-    const d = Units.mmToM(params.depth);
-    const rMm = params.radius ?? 300;
-    const tMm = params.tangentLength ?? 125;
-    const spanMm = params.length ?? (params.width + 2 * rMm + 2 * tMm);
-    const span = Units.mmToM(spanMm);
-    const t = 0.04;
-    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
-
-    const armHalfSpan = span / 2;
-    const cornerArmLen = armHalfSpan - w / 2;
-
-    // Outer rails for each quadrant
-    const quadSigns = [
-      { sx: 1, sz: 1 },
-      { sx: -1, sz: 1 },
-      { sx: -1, sz: -1 },
-      { sx: 1, sz: -1 },
-    ];
-
-    quadSigns.forEach(({ sx, sz }) => {
-      // X-arm rail segment
-      const railX = new THREE.Mesh(new THREE.BoxGeometry(cornerArmLen, d, t), mat);
-      railX.position.set(sx * (w / 2 + cornerArmLen / 2), 0, sz * (w / 2));
-      railX.castShadow = true;
-      group.add(railX);
-
-      // Z-arm rail segment
-      const railZ = new THREE.Mesh(new THREE.BoxGeometry(t, d, cornerArmLen), mat);
-      railZ.position.set(sx * (w / 2), 0, sz * (w / 2 + cornerArmLen / 2));
-      railZ.castShadow = true;
-      group.add(railZ);
-    });
-
-    // Rungs along the 4 branches
-    const rungD = 0.02;
-    const rungW = 0.035;
-
-    // X-axis rungs
-    for (let x = w / 2 + 0.1; x <= armHalfSpan - 0.05; x += 0.2) {
-      [-1, 1].forEach((sign) => {
-        const rung = new THREE.Mesh(new THREE.BoxGeometry(rungW, rungD, w), mat);
-        rung.position.set(sign * x, -d / 2 + rungD / 2, 0);
-        rung.castShadow = true;
-        group.add(rung);
-      });
-    }
-
-    // Z-axis rungs
-    for (let z = w / 2 + 0.1; z <= armHalfSpan - 0.05; z += 0.2) {
-      [-1, 1].forEach((sign) => {
-        const rung = new THREE.Mesh(new THREE.BoxGeometry(w, rungD, rungW), mat);
-        rung.position.set(0, -d / 2 + rungD / 2, sign * z);
-        rung.castShadow = true;
-        group.add(rung);
-      });
-    }
-
-    return group;
+    return buildTrayLayoutGroup(crossLayout(params), { isIS: params.isIS });
   }
 }

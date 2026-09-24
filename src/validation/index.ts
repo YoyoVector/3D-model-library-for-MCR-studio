@@ -4,3 +4,5 @@
  */
 
 export * from './ConnectionValidator.ts';
+export * from './AssemblyValidator.ts';
+export * from './AssemblyChain.ts';

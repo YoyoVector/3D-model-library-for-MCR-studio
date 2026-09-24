@@ -13,6 +13,8 @@ export interface MateResult {
   placement: EngineeringPlacement;
   positionErrorMm: number;
   alignmentDotProduct: number;
+  /** Dot product of the two port up vectors after placement (1.0 = aligned). */
+  upDotProduct?: number;
   message: string;
 }
 
@@ -105,16 +107,20 @@ export class MateEngine {
     const testPosB = frameLocalB.position.clone().applyQuaternion(qInstanceB).add(posInstanceB);
     const testDirB = frameLocalB.direction.clone().applyQuaternion(qInstanceB).normalize();
 
+    const testUpB = frameLocalB.up.clone().applyQuaternion(qInstanceB).normalize();
+
     const posError = testPosB.distanceTo(frameA.position);
     const alignDot = testDirB.dot(frameA.direction); // should be <= -0.999 (opposite directions)
+    const upDot = testUpB.dot(frameA.up); // should be ~ +1.0 (same tray-up)
 
-    const isAligned = posError <= toleranceMm && alignDot <= -0.99;
+    const isAligned = posError <= toleranceMm && alignDot <= -0.99 && upDot >= 0.99;
 
     return {
       success: isAligned,
       placement: computedPlacement,
       positionErrorMm: posError,
       alignmentDotProduct: alignDot,
+      upDotProduct: upDot,
       message: isAligned
         ? `Mated successfully. Position error: ${posError.toFixed(4)} mm, alignment dot: ${alignDot.toFixed(4)}`
         : `Mating out of tolerance. Error: ${posError.toFixed(4)} mm, dot: ${alignDot.toFixed(4)}`,

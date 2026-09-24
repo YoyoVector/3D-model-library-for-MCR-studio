@@ -1,7 +1,7 @@
 import { ComponentInstance } from '../core/Instance.ts';
 export interface ConnectionValidationResult {
     valid: boolean;
-    code: 'OK' | 'WIDTH_MISMATCH' | 'DEPTH_MISMATCH' | 'TYPE_MISMATCH' | 'PORT_NOT_FOUND';
+    code: 'OK' | 'WIDTH_MISMATCH' | 'DEPTH_MISMATCH' | 'TYPE_MISMATCH' | 'STYLE_MISMATCH' | 'PORT_NOT_FOUND';
     error?: string;
     recommendation?: string;
     details?: {

@@ -13,30 +13,36 @@ export interface LegacyVisualBaseline {
 }
 
 /**
- * Deterministic baseline signatures for the 8 LEGACY_FITTING_LIBRARY models.
+ * Deterministic baseline signatures for the 8 LEGACY_FITTING_LIBRARY component IDs (generic defaults).
  * Generated under fixed camera:
  * - Position: [2.6, 2.0, 3.0]
  * - Target: [0, 0, 0]
  * - FOV: 45°
  * - Viewport: 800x600
  * - Default Parameters Single Source of Truth
+ *
+ * Regenerated 2026-09-24 after the vendor-geometry correction (docs/handoff/recovery-audit.md):
+ * trays / fittings are now built from the TrayLayouts formula layer (I-profile rails, catalog rung
+ * pitch, curved tee transitions, correctly oriented vertical bends, no splice-plate overhang).
+ * Overall generic footprints are unchanged within 7 mm (e.g. elbow 0.913 m vs 0.920 m, tee ±0.700 m).
+ * The splice plate and cantilever support signatures are unchanged.
  */
 export const LEGACY_FITTING_BASELINES: Record<string, LegacyVisualBaseline> = {
   TRAY_STRAIGHT: {
     id: 'TRAY_STRAIGHT',
-    childMeshCount: 17,
-    vertexCount: 616,
-    triangleCount: 332,
-    bounds: [-0.3275, -0.05, -1.5175, 0.3275, 0.05, 1.56],
-    projectedCentroid: [-0.0057, -0.0039],
+    childMeshCount: 2,
+    vertexCount: 432,
+    triangleCount: 216,
+    bounds: [-0.313, -0.05, -1.5, 0.313, 0.05, 1.5],
+    projectedCentroid: [0, 0],
   },
   TRAY_STRAIGHT_DIVIDER: {
     id: 'TRAY_STRAIGHT_DIVIDER',
-    childMeshCount: 18,
-    vertexCount: 640,
-    triangleCount: 344,
-    bounds: [-0.3275, -0.05, -1.5175, 0.3275, 0.05, 1.56],
-    projectedCentroid: [-0.0057, -0.0039],
+    childMeshCount: 3,
+    vertexCount: 456,
+    triangleCount: 228,
+    bounds: [-0.313, -0.05, -1.5, 0.313, 0.05, 1.5],
+    projectedCentroid: [0, 0],
   },
   FITTING_SPLICE_PLATE: {
     id: 'FITTING_SPLICE_PLATE',
@@ -56,34 +62,34 @@ export const LEGACY_FITTING_BASELINES: Record<string, LegacyVisualBaseline> = {
   },
   FITTING_ELBOW_90: {
     id: 'FITTING_ELBOW_90',
-    childMeshCount: 7,
-    vertexCount: 3216,
-    triangleCount: 1092,
-    bounds: [0, -0.05, -0.92, 0.92, 0.05, 0],
-    projectedCentroid: [0.2619, 0.0112],
+    childMeshCount: 2,
+    vertexCount: 1632,
+    triangleCount: 1512,
+    bounds: [0, -0.05, -0.913, 0.913, 0.05, 0],
+    projectedCentroid: [0.2599, 0.0111],
   },
   FITTING_TEE: {
     id: 'FITTING_TEE',
-    childMeshCount: 9,
-    vertexCount: 216,
-    triangleCount: 108,
-    bounds: [-0.7, -0.05, -0.32, 0.7, 0.05, 0.7],
-    projectedCentroid: [-0.0522, -0.0361],
+    childMeshCount: 2,
+    vertexCount: 1872,
+    triangleCount: 1680,
+    bounds: [-0.7, -0.05, -0.313, 0.7, 0.05, 0.7],
+    projectedCentroid: [-0.0532, -0.0368],
   },
   FITTING_RISER_IN_90: {
     id: 'FITTING_RISER_IN_90',
-    childMeshCount: 7,
-    vertexCount: 3216,
-    triangleCount: 1092,
-    bounds: [0, 0, -0.32, 0.65, 0.65, 0.32],
-    projectedCentroid: [0.1082, 0.1143],
+    childMeshCount: 2,
+    vertexCount: 1608,
+    triangleCount: 1500,
+    bounds: [0, -0.4, -0.313, 0.4, 0, 0.313],
+    projectedCentroid: [0.0619, -0.1298],
   },
   FITTING_RISER_OUT_90: {
     id: 'FITTING_RISER_OUT_90',
-    childMeshCount: 7,
-    vertexCount: 3216,
-    triangleCount: 1092,
-    bounds: [0, -0.65, -0.32, 0.65, 0, 0.32],
-    projectedCentroid: [0.101, -0.2117],
+    childMeshCount: 2,
+    vertexCount: 1608,
+    triangleCount: 1500,
+    bounds: [0, 0, -0.313, 0.4, 0.4, 0.313],
+    projectedCentroid: [0.0646, 0.0682],
   },
 };

@@ -3,11 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { VENDOR_PROFILES } from './TraySystemProfile.ts';
+
 export type TraySystemCategory =
   | 'ALL'
-  | 'SYSTEM_LADDER' // 鋁製梯型托架系統 (Page 3–26)
-  | 'SYSTEM_VENTILATED_SMALL' // 通風沖底型 - 小型 100W x 50H (Page 27–37)
-  | 'SYSTEM_VENTILATED_LARGE' // 通風沖底型 - 大型 300W x 100H (Page 38–47)
+  | 'SYSTEM_LADDER' // 鋁製梯型電纜線槽 (PDF p.1–26)
+  | 'SYSTEM_VENTILATED_SMALL' // 鋁製密閉沖底型 100W x 50H (PDF p.27–37)
+  | 'SYSTEM_VENTILATED_LARGE' // 鋁製密閉沖底型 300W x 100H (PDF p.38–47)
   | 'SYSTEM_STRUCTURAL' // 主管廊鋼構架
   | 'SYSTEM_EQUIPMENT' // 電氣設備與穿牆封堵
   | 'SYSTEM_OBSTACLE'; // 製程高溫與化學管道
@@ -33,29 +35,30 @@ export const TRAY_SYSTEM_METAS: Record<TraySystemCategory, SystemCategoryMeta> =
   },
   SYSTEM_LADDER: {
     id: 'SYSTEM_LADDER',
-    name: 'Heavy Duty Ladder Tray System',
+    name: 'Aluminum Ladder Tray System',
     nameZh: '鋁製梯型電纜線槽系統',
     badgeClass: 'bg-blue-950 text-blue-300 border-blue-700',
-    catalogPages: 'P.3 ~ P.26',
-    description: 'CNS 13303 / NEMA VE 1 工業重型梯型托架，標稱寬度 150~1000mm，邊高 100/150mm，支援 90°/60°/45°/30° 轉彎、三通、四通、爬坡與大小頭。',
+    catalogPages: 'PDF p.1 ~ p.26',
+    description:
+      'W 100~1000 mm、H 150 mm、R 300/600/900 mm；直槽、水平 90°/60°/45°/30° 彎頭、三通、四通、垂直上升/下降 90°/60°/45°/30°、中間/左偏/右偏異徑接頭。',
     profileId: 'LADDER_PROFILE_STANDARD',
   },
   SYSTEM_VENTILATED_SMALL: {
     id: 'SYSTEM_VENTILATED_SMALL',
-    name: 'Ventilated Through Tray (Small 100W x 50H)',
-    nameZh: '通風沖底型線槽 - 小型 (100W x 50H)',
+    name: 'Ventilated-Through Tray A (100W x 50H)',
+    nameZh: '鋁製密閉沖底型線槽 A (100W x 50H)',
     badgeClass: 'bg-emerald-950 text-emerald-300 border-emerald-700',
-    catalogPages: 'P.27 ~ P.37',
-    description: '鋁製密閉沖孔通風型托架（小型），標稱尺寸 100W x 50H mm，曲率半徑 R=300mm，標準轉折為 90° 與 45° 彎頭、三通與異徑。',
+    catalogPages: 'PDF p.27 ~ p.37',
+    description: '100W x 50H、R 300 mm；直槽、水平 90°/45° 彎頭、水平三通、垂直上升 90°、垂直下降 90° (型錄無四通與異徑)。',
     profileId: 'VENTILATED_PROFILE_A',
   },
   SYSTEM_VENTILATED_LARGE: {
     id: 'SYSTEM_VENTILATED_LARGE',
-    name: 'Ventilated Through Tray (Large 300W x 100H)',
-    nameZh: '通風沖底型線槽 - 大型 (300W x 100H)',
+    name: 'Ventilated-Through Tray B (300W x 100H)',
+    nameZh: '鋁製密閉沖底型線槽 B (300W x 100H)',
     badgeClass: 'bg-teal-950 text-teal-300 border-teal-700',
-    catalogPages: 'P.38 ~ P.47',
-    description: '鋁製密閉沖孔通風型托架（大型），標稱尺寸 300W x 100H mm，曲率半徑 R=300mm，完整支援 90°/60°/45°/30° 彎頭、三通、垂直爬坡與異徑。',
+    catalogPages: 'PDF p.38 ~ p.47',
+    description: '300W x 100H、R 300 mm；直槽、水平 90°/30° 彎頭、垂直上升 90°、垂直下降 90° (型錄無三通、四通與異徑)。',
     profileId: 'VENTILATED_PROFILE_B',
   },
   SYSTEM_STRUCTURAL: {
@@ -91,32 +94,32 @@ export type ComponentSubCategory =
   | 'STRAIGHT' // 直槽
   | 'ELBOW' // 水平轉彎
   | 'BRANCH' // 三通 / 四通
-  | 'RISER' // 垂直爬坡 / 下坡
-  | 'REDUCER' // 大小頭過渡
+  | 'RISER' // 垂直上升 / 下降
+  | 'REDUCER' // 異徑接頭
   | 'ACCESSORY' // 附件板
   | 'STRUCTURAL' // 鋼構
   | 'EQUIPMENT' // 設備
   | 'OBSTACLE'; // 障礙
 
 export function getComponentSubCategory(compId: string): ComponentSubCategory {
+  // Prefix matching: e.g. STRUCT_CROSS_BEAM is structural, CONDUIT_RISER is a conduit, not a tray fitting.
   if (compId.startsWith('TRAY_STRAIGHT')) return 'STRAIGHT';
-  if (compId.includes('ELBOW')) return 'ELBOW';
-  if (compId.includes('TEE') || compId.includes('CROSS')) return 'BRANCH';
-  if (compId.includes('RISER')) return 'RISER';
-  if (compId.includes('REDUCER')) return 'REDUCER';
-  if (compId.startsWith('ACCESSORY')) return 'ACCESSORY';
+  if (compId.startsWith('FITTING_ELBOW')) return 'ELBOW';
+  if (compId === 'FITTING_TEE' || compId === 'FITTING_CROSS') return 'BRANCH';
+  if (compId.startsWith('FITTING_RISER')) return 'RISER';
+  if (compId.startsWith('FITTING_REDUCER')) return 'REDUCER';
   if (compId.startsWith('STRUCT')) return 'STRUCTURAL';
-  if (compId.startsWith('EQUIP') || compId.startsWith('PENETRATION') || compId.startsWith('CONTEXT')) return 'EQUIPMENT';
+  if (compId.startsWith('EQUIP') || compId.startsWith('PENETRATION') || compId.startsWith('CONTEXT') || compId.startsWith('CONDUIT')) return 'EQUIPMENT';
   if (compId.startsWith('OBSTACLE')) return 'OBSTACLE';
   return 'ACCESSORY';
 }
 
 export const SUB_CATEGORY_NAMES: Record<ComponentSubCategory, string> = {
-  STRAIGHT: '1. 主直通托架 (Straight Trays)',
-  ELBOW: '2. 水平轉向彎頭 (Horizontal Elbows)',
-  BRANCH: '3. 分支三通與十字四通 (Tees & Crosses)',
-  RISER: '4. 垂直立體高程爬坡彎頭 (Vertical Risers)',
-  REDUCER: '5. 變徑大小頭過渡 (Reducers)',
+  STRAIGHT: '1. 直式線槽 (Straight Trays)',
+  ELBOW: '2. 水平彎頭 (Horizontal Elbows)',
+  BRANCH: '3. 三通與四通 (Tees & Crosses)',
+  RISER: '4. 垂直上升 / 下降彎頭 (Vertical Bends)',
+  REDUCER: '5. 異徑接頭 (Reducers)',
   ACCESSORY: '6. 端部與落線工程附件 (Accessories)',
   STRUCTURAL: '7. 鋼構管架與組合件 (Structural Framework)',
   EQUIPMENT: '8. 電氣設備與建築穿牆 (Equipment & MCT)',
@@ -124,46 +127,21 @@ export const SUB_CATEGORY_NAMES: Record<ComponentSubCategory, string> = {
 };
 
 /**
- * Returns which tray system categories a component is compatible with.
+ * Returns which tray system categories a component belongs to.
+ * Tray series membership is derived from the vendor profiles' catalog component lists
+ * (single source of truth), not maintained by hand.
  */
 export function getComponentSystemCategories(compId: string): TraySystemCategory[] {
   if (compId.startsWith('STRUCT')) return ['SYSTEM_STRUCTURAL'];
   if (compId.startsWith('EQUIP') || compId.startsWith('PENETRATION') || compId.startsWith('CONTEXT')) return ['SYSTEM_EQUIPMENT'];
   if (compId.startsWith('OBSTACLE')) return ['SYSTEM_OBSTACLE'];
 
-  // Tray fittings:
-  const categories: TraySystemCategory[] = ['SYSTEM_LADDER'];
-
-  // Small ventilated supports 90 & 45 elbows, tee, risers, center reducer
-  if (
-    compId === 'TRAY_STRAIGHT' ||
-    compId === 'FITTING_ELBOW_90' ||
-    compId === 'FITTING_ELBOW_45' ||
-    compId === 'FITTING_TEE' ||
-    compId === 'FITTING_RISER_IN_90' ||
-    compId === 'FITTING_RISER_OUT_90' ||
-    compId === 'FITTING_REDUCER_CENTER'
-  ) {
-    categories.push('SYSTEM_VENTILATED_SMALL');
-  }
-
-  // Large ventilated supports 90, 60, 45, 30 elbows, tee, cross, risers, reducers
-  if (
-    compId === 'TRAY_STRAIGHT' ||
-    compId === 'FITTING_ELBOW_90' ||
-    compId === 'FITTING_ELBOW_60' ||
-    compId === 'FITTING_ELBOW_45' ||
-    compId === 'FITTING_ELBOW_30' ||
-    compId === 'FITTING_TEE' ||
-    compId === 'FITTING_CROSS' ||
-    compId === 'FITTING_RISER_IN_90' ||
-    compId === 'FITTING_RISER_OUT_90' ||
-    compId === 'FITTING_REDUCER_CENTER' ||
-    compId === 'FITTING_REDUCER_LEFT' ||
-    compId === 'FITTING_REDUCER_RIGHT'
-  ) {
-    categories.push('SYSTEM_VENTILATED_LARGE');
-  }
-
+  const categories: TraySystemCategory[] = [];
+  (Object.values(TRAY_SYSTEM_METAS) as SystemCategoryMeta[]).forEach((meta) => {
+    const profile = meta.profileId ? VENDOR_PROFILES[meta.profileId] : undefined;
+    if (profile && profile.components.some((c) => c.definitionId === compId)) {
+      categories.push(meta.id);
+    }
+  });
   return categories;
 }

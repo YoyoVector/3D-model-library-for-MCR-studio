@@ -33,7 +33,14 @@ export function computeGeometryBounds(
   const mesh = definition.buildGeometry(effectiveParams);
   mesh.updateMatrixWorld(true);
 
-  const box = new THREE.Box3().setFromObject(mesh);
+  // Engineering bounds describe the component body. Small accessory visuals
+  // (userData.isAccessory, e.g. optional splice plates) are excluded.
+  const box = new THREE.Box3();
+  mesh.traverse((obj) => {
+    const m = obj as THREE.Mesh;
+    if (m.isMesh && !m.userData?.isAccessory) box.expandByObject(m);
+  });
+  if (box.isEmpty()) box.setFromObject(mesh);
 
   return {
     min: [box.min.x * 1000, box.min.y * 1000, box.min.z * 1000],

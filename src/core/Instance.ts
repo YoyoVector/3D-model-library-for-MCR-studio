@@ -12,6 +12,7 @@ import type {
   WorldPortDefinition,
   CenterlineRouteDefinition,
   ComponentBoundsDefinition,
+  GeometryBuildOptions,
 } from './Schema.ts';
 
 /**
@@ -177,14 +178,25 @@ export class ComponentInstance {
    * Builds or returns the Three.js Object3D for this instance.
    * Local geometry mesh vertices are freshly generated from effectiveParameters,
    * mesh.scale remains strictly (1, 1, 1).
+   *
+   * With `options` (e.g. host materials) a fresh, uncached object is returned: the host owns
+   * it and its geometry. Without options the cached object on the shared library materials is
+   * returned.
    */
-  public getThreeMesh(): THREE.Group {
+  public getThreeMesh(options?: GeometryBuildOptions): THREE.Group {
+    if (options) {
+      return this.buildMesh(options);
+    }
     if (this._cachedMesh) {
       return this._cachedMesh;
     }
+    this._cachedMesh = this.buildMesh();
+    return this._cachedMesh;
+  }
 
+  private buildMesh(options?: GeometryBuildOptions): THREE.Group {
     // Build pristine geometry group at engineering origin (0, 0, 0)
-    const localGroup = this.definition.buildGeometry(this._effectiveParameters);
+    const localGroup = this.definition.buildGeometry(this._effectiveParameters, options);
     localGroup.name = `Instance_${this.instanceId}_${this.definition.id}`;
 
     // Tag each mesh with instanceId for raycasting/inspector
@@ -210,8 +222,7 @@ export class ComponentInstance {
     instanceContainer.scale.set(1, 1, 1);
     localGroup.scale.set(1, 1, 1);
 
-    this._cachedMesh = instanceContainer;
-    return this._cachedMesh;
+    return instanceContainer;
   }
 
   private applyPlacementToMesh(group: THREE.Group): void {

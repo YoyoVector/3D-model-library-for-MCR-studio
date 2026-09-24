@@ -49,16 +49,20 @@ jobs:
       - name: Run Package Contract & Public API Smoke Test
         run: npm run test:contract
 
+      - name: Run Plain <script> Build Test (three r128 & current)
+        run: npm run test:script
+
       - name: Verify Package Packing & Artifact Integrity
         run: |
           npm pack --dry-run
           ls -la lib/
           test -f lib/index.js
           test -f lib/index.cjs
+          test -f lib/index.iife.js
           test -f lib/index.d.ts
 
-      - name: Build Demo Viewer Application
-        run: npm run build:app
+      - name: Build Demo Viewer Application (dist/ and standalone/)
+        run: npm run build:app && npm run build:standalone
 
       - name: Publish to NPM
         if: ${{ !inputs.dry_run }}
@@ -78,5 +82,6 @@ jobs:
           files: |
             lib/*
             dist/*
+            standalone/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

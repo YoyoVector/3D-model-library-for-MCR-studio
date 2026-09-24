@@ -20,4 +20,5 @@ export * from './validation/index.ts';
 export * from './bom/index.ts';
 export * from './geometry/index.ts';
 export * from './export/index.ts';
+export * from './network/index.ts';
 export * from './tests/index.ts';

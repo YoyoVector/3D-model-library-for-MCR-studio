@@ -30,6 +30,17 @@ import {
   type TraySystemProfile,
 } from '../registry/TraySystemProfile.ts';
 import { getComponentSystemCategories } from '../registry/SystemClassification.ts';
+import { Materials } from '../geometry/Materials.ts';
+import { vec } from '../geometry/SweepPath.ts';
+import { PlanFrames, leftOfTravel, type PlanFrame } from '../network/PlanFrames.ts';
+import {
+  trayNetworkFromPlan,
+  normalizeTrayNetwork,
+  resolveTrayNetwork,
+  updateRouteForChanges,
+  type TrayNetwork,
+  type TrayNetworkLayout,
+} from '../network/TrayNetwork.ts';
 
 export interface TestCaseResult {
   id: string; // 'Case A', 'Case B', ...
@@ -111,6 +122,52 @@ function arcEvidence(verts: V3[], center: [number, number], radius: number, star
   return { found, tested: fractions.length };
 }
 
+/**
+ * Plan fixture for the network cases (page frame: x right, y down the page, z elevation; metres).
+ * Main run 600 east at EL 6.4 with a vertical tee (VT → J2), a tee (T) with a 300 branch down the
+ * page ending in a riser to J at EL 1.4, a 90° turn at E into a 450 run (not a catalog width), and a
+ * separate 300 run of 1.5 m + 1.5 m through a pass-through node.
+ */
+function networkFixture(): TrayNetwork {
+  const nodes = [
+    { id: 'A', x: 0, y: 0, z: 6.4 },
+    { id: 'VT', x: 5, y: 0, z: 6.4 },
+    { id: 'T', x: 10, y: 0, z: 6.4 },
+    { id: 'E', x: 20, y: 0, z: 6.4 },
+    { id: 'E2', x: 20, y: 8, z: 6.4 },
+    { id: 'B', x: 10, y: 6, z: 6.4 },
+    { id: 'J', x: 10, y: 6, z: 1.4 },
+    { id: 'J2', x: 5, y: 0, z: 1.4 },
+    { id: 'P1', x: 0, y: 20, z: 2.8 },
+    { id: 'PM', x: 1.5, y: 20, z: 2.8 },
+    { id: 'P2', x: 3, y: 20, z: 2.8 },
+  ];
+  const segments = [
+    { id: 's1', from: 'A', to: 'VT', width: 600 },
+    { id: 's1b', from: 'VT', to: 'T', width: 600 },
+    { id: 's2', from: 'T', to: 'E', width: 600 },
+    { id: 's3', from: 'E', to: 'E2', width: 450, height: 150 },
+    { id: 'br', from: 'T', to: 'B', width: 300 },
+    { id: 'rs', from: 'B', to: 'J', width: 300 },
+    { id: 'vt', from: 'VT', to: 'J2', width: 300 },
+    { id: 'p1', from: 'P1', to: 'PM', width: 300 },
+    { id: 'p2', from: 'PM', to: 'P2', width: 300 },
+  ];
+  return trayNetworkFromPlan(nodes, segments, PlanFrames.PAGE_Y_DOWN_METRES);
+}
+
+function resolvedFixture(): TrayNetworkLayout {
+  return resolveTrayNetwork(normalizeTrayNetwork(networkFixture(), LADDER()).network, LADDER());
+}
+
+/** World centerline points of one route through an instance, oriented from `fromPort`. */
+function routeWorldPoints(inst: ComponentInstance, fromPort: string, toPort: string): V3[] {
+  const r = inst.getCenterlines().find((x) => (x.fromPort === fromPort && x.toPort === toPort) || (x.fromPort === toPort && x.toPort === fromPort));
+  if (!r) throw new Error(`${inst.instanceId}: no route ${fromPort}↔${toPort}`);
+  const pts = r.samplePoints.map((p) => Transforms.transformPoint(p as V3, inst.placement) as V3);
+  return r.fromPort === fromPort ? pts : pts.reverse();
+}
+
 /** All tray / fitting definitions (families driven by TrayLayouts). */
 function trayDefinitions(): ComponentDefinition[] {
   return ComponentRegistry.getAll().filter((d) => trayFamilyOf(d.id) !== 'OTHER');
@@ -177,6 +234,12 @@ export class AcceptanceTestSuite {
       () => this.testCaseAI_AssemblyRegression(),
       () => this.testCaseAJ_NegativeControls(),
       () => this.testCaseAK_AssemblyDemos(),
+      () => this.testCaseAL_PlanFrameHandedness(),
+      () => this.testCaseAM_NetworkFittings(),
+      () => this.testCaseAN_NetworkNormalizeAndIssues(),
+      () => this.testCaseAO_NetworkCenterline(),
+      () => this.testCaseAP_NetworkBom(),
+      () => this.testCaseAQ_HostMaterials(),
     ];
 
     const results: TestCaseResult[] = tests.map((t, i) => {
@@ -1490,6 +1553,417 @@ export class AcceptanceTestSuite {
       passed,
       'Elbow→Tee chain, Cross chain, vertical offset (rise 2500) and reducer chain: all joints valid, end points equal hand calculation',
       'PASS (4 組裝配示範接頭全部通過, 端點座標與手算一致)',
+      issues.join('; '),
+      { issues }
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Tray networks and host integration (Cases AL–AQ)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Case AL: Plan frames keep the drawing's handedness. A LEFT reducer (p.20) laid along the
+   * drawing keeps the rail on the drawing's left straight, and every resolved fitting port lies
+   * on its drawn segment. Negative control: the wrong frame puts the straight rail on the right.
+   */
+  public static testCaseAL_PlanFrameHandedness(): TestCaseResult {
+    const issues: string[] = [];
+    const page = PlanFrames.PAGE_Y_DOWN_METRES;
+    const north = PlanFrames.NORTH_UP_METRES;
+    const port = (inst: ComponentInstance, id: string) => inst.getWorldPorts().find((p) => p.id === id)!;
+
+    for (const f of [page, north]) {
+      const p = { x: 12.5, y: -3.25, z: 6.4 };
+      const q = f.toPlan(f.toWorld(p));
+      if (Math.abs(q.x - p.x) + Math.abs(q.y - p.y) + Math.abs(q.z - p.z) > 1e-9) issues.push(`${f.id}: plan → world → plan changed the point`);
+    }
+
+    // Travelling east (+x) on the drawing, the traveller's left is up the sheet.
+    const leftOfEast = (f: PlanFrame) => {
+      const o = f.toWorld({ x: 0, y: 0, z: 0 });
+      const left = leftOfTravel(vec.normalize(vec.sub(f.toWorld({ x: 1, y: 0, z: 0 }), o)));
+      return f.toPlan(vec.add(o, vec.scale(left, 1000)));
+    };
+    if (!(leftOfEast(page).y < -0.999)) issues.push('page frame: left of east is not up the sheet (−y)');
+    if (!(leftOfEast(north).y > 0.999)) issues.push('north-up frame: left of east is not north (+y)');
+
+    // LEFT reducer 600→300 laid eastward on the drawing: the narrow end shifts 150 mm to the left.
+    const narrowShift = (f: PlanFrame) => {
+      const inst = createComponentFromProfile('FITTING_REDUCER_LEFT', LADDER(), { inletWidth: 600, outletWidth: 300 }, 'al_reducer');
+      const o = f.toWorld({ x: 0, y: 0, z: 6.4 });
+      const east = vec.normalize(vec.sub(f.toWorld({ x: 1, y: 0, z: 6.4 }), o));
+      const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(east[0], east[1], east[2]));
+      inst.setPlacement({ position: o, quaternion: [q.x, q.y, q.z, q.w] });
+      return f.toPlan(port(inst, 'PORT_B').worldPosition).y - f.toPlan(port(inst, 'PORT_A').worldPosition).y;
+    };
+    const pageShift = narrowShift(page);
+    if (Math.abs(pageShift - -0.15) > 1e-9) issues.push(`page frame: LEFT reducer narrow end shifts ${pageShift} m in y (expected −0.150, up the sheet)`);
+    const northShift = narrowShift(north);
+    if (Math.abs(northShift - 0.15) > 1e-9) issues.push(`north-up frame: LEFT reducer narrow end shifts ${northShift} m in y (expected +0.150, north)`);
+    // Negative control: page data read through the north-up frame is mirrored — the check sees it.
+    const mirrored = narrowShift(north);
+    const controlCaught = Math.abs(mirrored - -0.15) > 1e-6;
+    if (!controlCaught) issues.push('negative control: mirrored frame not detected');
+
+    // Every fitting port lies on the segment as drawn (plan coordinates).
+    const net = networkFixture();
+    const lay = resolvedFixture();
+    const planOf = new Map(normalizeTrayNetwork(net, LADDER()).network.nodes.map((n) => [n.id, page.toPlan(n.position)]));
+    const segs = new Map(normalizeTrayNetwork(net, LADDER()).network.segments.map((s) => [s.id, s]));
+    let checked = 0;
+    lay.fittings.forEach((f) =>
+      f.legs.forEach(({ segmentId, portId }) => {
+        const s = segs.get(segmentId)!;
+        const nodeId = f.nodeId;
+        const n = planOf.get(nodeId)!;
+        const o = planOf.get(s.from === nodeId ? s.to : s.from)!;
+        const p = page.toPlan(port(f.instance, portId).worldPosition);
+        const d = [o.x - n.x, o.y - n.y, o.z - n.z];
+        const L = Math.hypot(d[0], d[1], d[2]);
+        const r = [p.x - n.x, p.y - n.y, p.z - n.z];
+        const along = (r[0] * d[0] + r[1] * d[1] + r[2] * d[2]) / L;
+        const off = Math.hypot(r[0] - (along * d[0]) / L, r[1] - (along * d[1]) / L, r[2] - (along * d[2]) / L);
+        checked++;
+        if (off > 1e-6 || along < -1e-9 || along > L) issues.push(`${f.id}.${portId} is off segment ${segmentId} on the drawing (${off.toFixed(4)} m)`);
+      })
+    );
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AL',
+      '平面座標左右手一致 (Plan Frame Handedness: LEFT Reducer & Fittings as Drawn)',
+      passed,
+      'Round trip exact; left of travel = drawing left; LEFT reducer narrow end on the drawing’s left; mirrored frame detected; all fitting ports on their drawn segments',
+      `PASS (左偏異徑於圖面左側, 鏡像對照組被攔截, ${checked} 個配件埠位位於圖面線段上)`,
+      issues.join('; '),
+      { issues, pageShift, northShift }
+    );
+  }
+
+  /**
+   * Case AM: Network → catalog fittings. Expected fittings per node, straight lengths from the
+   * fittings' own reach (hand-derived), and every joint passes the physical joint check.
+   */
+  public static testCaseAM_NetworkFittings(): TestCaseResult {
+    const issues: string[] = [];
+    const lay = resolvedFixture();
+    if (!lay.ok) issues.push(`errors: ${lay.issues.filter((i) => i.severity === 'ERROR').map((i) => i.message).join(' | ')}`);
+
+    const got = lay.fittings.map((f) => `${f.nodeId}:${f.definitionId}`).sort();
+    const exp = [
+      'B:FITTING_RISER_OUT_90',
+      'E:FITTING_ELBOW_90',
+      'E:FITTING_REDUCER_CENTER',
+      'T:FITTING_REDUCER_CENTER',
+      'T:FITTING_TEE',
+      'VT:FITTING_REDUCER_CENTER',
+      'VT:FITTING_TEE',
+      'VT~VT:FITTING_RISER_OUT_90',
+    ].sort();
+    if (got.join(',') !== exp.join(',')) issues.push(`fittings ${got.join(',')} != ${exp.join(',')}`);
+
+    // Reach: tee main W/2+R+T = 725, tee branch 725 (+600 reducer), elbow Rc·tan45°+T = 725 (+600),
+    // vertical bend (R+H/2)·tan45°+T = 500.
+    const expLen: Record<string, number> = { s1: 4275, s1b: 3550, s2: 8550, s3: 6675, br: 4175, rs: 4500, vt: 4500, p1: 1500, p2: 1500 };
+    const lengths = Object.fromEntries(lay.straights.map((s) => [s.segmentId, s.lengthMm]));
+    Object.entries(expLen).forEach(([id, L]) => {
+      if (Math.abs((lengths[id] ?? NaN) - L) > 1e-6) issues.push(`straight ${id} = ${lengths[id]} (expected ${L})`);
+    });
+
+    // Physical joints between every pair of coincident ports; every fitting port is joined.
+    const inst = lay.instances();
+    const joined = new Set<string>();
+    let joints = 0;
+    for (let i = 0; i < inst.length; i++) {
+      for (let j = i + 1; j < inst.length; j++) {
+        for (const pa of inst[i].getWorldPorts()) {
+          for (const pb of inst[j].getWorldPorts()) {
+            if (dist(pa.worldPosition, pb.worldPosition) > 0.01) continue;
+            joints++;
+            joined.add(`${inst[i].instanceId}.${pa.id}`);
+            joined.add(`${inst[j].instanceId}.${pb.id}`);
+            const jc = AssemblyValidator.checkJoint(inst[i], pa.id, inst[j], pb.id);
+            if (!jc.passed) issues.push(`joint ${inst[i].instanceId}.${pa.id} ↔ ${inst[j].instanceId}.${pb.id}: ${jc.issues.join('; ')}`);
+          }
+        }
+      }
+    }
+    if (joints !== 15) issues.push(`${joints} joints (expected 15)`);
+    lay.fittings.forEach((f) =>
+      f.instance.getWorldPorts().forEach((p) => {
+        if (!joined.has(`${f.id}.${p.id}`)) issues.push(`${f.id}.${p.id} is not connected`);
+      })
+    );
+
+    // Trays upright on level runs; vertical runs take the vertical bend's orientation.
+    lay.straights.forEach((s) => {
+      const level = Math.abs(s.end[1] - s.start[1]) < 1e-6;
+      if (level && dist(s.up as V3, [0, 1, 0]) > 1e-9) issues.push(`${s.segmentId} not upright`);
+    });
+    const riser = lay.fittings.find((f) => f.nodeId === 'B' && f.role === 'FITTING')!;
+    const rs = lay.straights.find((s) => s.segmentId === 'rs')!;
+    if (dist(rs.up as V3, riser.instance.getWorldPorts().find((p) => p.id === 'PORT_B')!.worldUp) > 1e-9) issues.push('vertical run twisted against its bend');
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AM',
+      '路網轉型錄配件 (Tray Network → Catalog Fittings, Reach & Physical Joints)',
+      passed,
+      '8 fittings as expected; straight lengths = node distance − fitting reach (hand-derived); 15 joints pass AssemblyValidator; no open fitting port; trays upright',
+      `PASS (8 個配件, 9 段直槽長度與手算一致, ${joints} 個接頭實體檢查通過)`,
+      issues.join('; '),
+      { issues, fittings: got, lengths }
+    );
+  }
+
+  /**
+   * Case AN: Normalization and issue reporting. Catalog width snap, vertical tee replacement,
+   * and ERRORs for what the catalog cannot build (never silently approximated).
+   */
+  public static testCaseAN_NetworkNormalizeAndIssues(): TestCaseResult {
+    const issues: string[] = [];
+    const page = PlanFrames.PAGE_Y_DOWN_METRES;
+    const codes = (l: { issues: Array<{ severity: string; code: string }> }) => l.issues.filter((i) => i.severity === 'ERROR').map((i) => i.code);
+
+    const norm = normalizeTrayNetwork(networkFixture(), LADDER());
+    const width = norm.changes.find((c) => c.kind === 'SEGMENT_WIDTH');
+    if (!width || width.kind !== 'SEGMENT_WIDTH' || width.segmentId !== 's3' || width.from !== 450 || width.to !== 500) issues.push('s3 not widened 450 → 500');
+    const vt = norm.issues.find((i) => i.code === 'VERTICAL_TEE_REPLACED');
+    if (!vt || vt.values?.stubMm !== 1825) issues.push(`vertical tee stub ${vt?.values?.stubMm} (expected 1825 = 725 + 600 + 500)`);
+    const moved = norm.changes.find((c) => c.kind === 'NODE_MOVED');
+    if (!moved || moved.kind !== 'NODE_MOVED' || moved.nodeId !== 'J2' || Math.abs(dist(moved.from, moved.to) - 1825) > 1e-6) issues.push('J2 not moved 1825 mm');
+
+    // Routes (cable paths) through the replaced vertical tee gain the stub, in both directions.
+    const lay = resolveTrayNetwork(norm.network, LADDER());
+    const down = updateRouteForChanges(['s1', 'vt'], norm);
+    const up = updateRouteForChanges(['vt', 's1b', 's2'], norm);
+    if (down.join(',') !== 's1,vt~STUB,vt') issues.push(`route down → ${down.join(',')}`);
+    if (up.join(',') !== 'vt,vt~STUB,s1b,s2') issues.push(`route up → ${up.join(',')}`);
+    if (updateRouteForChanges(['s1', 's1b'], norm).join(',') !== 's1,s1b') issues.push('main-run route changed');
+    [down, up].forEach((r) => {
+      const pc = lay.pathCenterline(r);
+      if (!pc.ok) issues.push(`${r.join(',')}: ${pc.issues.join('; ')}`);
+    });
+    if (lay.pathCenterline(['s1', 'vt']).ok) issues.push('stale route (without the stub) must not measure');
+
+    // Without normalization the resolver refuses what the catalog cannot build.
+    const raw = codes(resolveTrayNetwork(networkFixture(), LADDER()));
+    ['VERTICAL_TEE_UNRESOLVED', 'WIDTH_NOT_IN_CATALOG'].forEach((c) => {
+      if (!raw.includes(c)) issues.push(`raw network: ${c} not reported`);
+    });
+
+    const net = (nodes: Array<[string, number, number, number]>, segs: Array<[string, string, string, number]>): TrayNetwork =>
+      trayNetworkFromPlan(
+        nodes.map(([id, x, y, z]) => ({ id, x, y, z })),
+        segs.map(([id, from, to, w]) => ({ id, from, to, width: w })),
+        page
+      );
+    const expectError = (label: string, n: TrayNetwork, code: string, profile: TraySystemProfile = LADDER()) => {
+      const r = resolveTrayNetwork(n, profile);
+      if (!codes(r).includes(code)) issues.push(`${label}: expected ${code}, got ${codes(r).join(',') || 'none'}`);
+      return r;
+    };
+    const c75 = Math.cos((75 * Math.PI) / 180);
+    const s75 = Math.sin((75 * Math.PI) / 180);
+    expectError('75° turn', net([['a', 0, 0, 5], ['b', 10, 0, 5], ['c', 10 + 10 * c75, -10 * s75, 5]], [['x', 'a', 'b', 600], ['y', 'b', 'c', 600]]), 'ANGLE_NOT_IN_CATALOG');
+    const short = expectError(
+      'short segment',
+      net([['a', 0, 0, 5], ['b', 5, 0, 5], ['c', 5, 1, 5], ['d', 0, 1, 5]], [['x', 'a', 'b', 600], ['y', 'b', 'c', 600], ['z', 'c', 'd', 600]]),
+      'SEGMENT_TOO_SHORT'
+    );
+    const tooShort = short.issues.find((i) => i.code === 'SEGMENT_TOO_SHORT');
+    if (tooShort?.values?.requiredMm !== 1450) issues.push(`short segment requires ${tooShort?.values?.requiredMm} (expected 1450)`);
+    expectError('Y junction', net([['o', 0, 0, 5], ['a', 5, 0, 5], ['b', -2.5, 4.33, 5], ['c', -2.5, -4.33, 5]], [['x', 'o', 'a', 600], ['y', 'o', 'b', 600], ['z', 'o', 'c', 600]]), 'JUNCTION_NOT_IN_CATALOG');
+    expectError(
+      'tee in ventilated B',
+      net([['a', -5, 0, 5], ['o', 0, 0, 5], ['b', 5, 0, 5], ['c', 0, 5, 5]], [['x', 'a', 'o', 300], ['y', 'o', 'b', 300], ['z', 'o', 'c', 300]]),
+      'FITTING_NOT_OFFERED',
+      VENT_B()
+    );
+    const wide = normalizeTrayNetwork(net([['a', 0, 0, 5], ['b', 5, 0, 5]], [['x', 'a', 'b', 1200]]), LADDER());
+    if (!codes(wide).includes('WIDTH_NOT_IN_CATALOG')) issues.push('W=1200 not reported');
+
+    // Positive control: a 45° turn is a catalog elbow.
+    const ok45 = resolveTrayNetwork(net([['a', 0, 0, 5], ['b', 10, 0, 5], ['c', 10 + 10 * Math.SQRT1_2, -10 * Math.SQRT1_2, 5]], [['x', 'a', 'b', 600], ['y', 'b', 'c', 600]]), LADDER());
+    if (!ok45.ok || ok45.fittings[0]?.definitionId !== 'FITTING_ELBOW_45') issues.push('45° turn not resolved to FITTING_ELBOW_45');
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AN',
+      '路網正規化與無法施作回報 (Normalize & Report What the Catalog Cannot Build)',
+      passed,
+      '450 → 500; vertical tee → tee + 1825 stub + bend, free end moved, routes gain the stub; ERROR for vertical tee (raw), non-catalog width, 75° turn, short segment (needs 1450), Y junction, tee not offered in ventilated B, W 1200; 45° resolves',
+      'PASS (寬度與垂直三通正規化正確, 7 種無法施作情況全部回報為錯誤)',
+      issues.join('; '),
+      { issues }
+    );
+  }
+
+  /**
+   * Case AO: Physical centerline length of a route = straights + fitting routes + reducers, and it
+   * equals the length measured along the placed instances' own world centerlines (continuous).
+   */
+  public static testCaseAO_NetworkCenterline(): TestCaseResult {
+    const issues: string[] = [];
+    const lay = resolvedFixture();
+    const path = ['s1', 's1b', 'br', 'rs'];
+    const pc = lay.pathCenterline(path);
+    const teeBranch = (Math.PI / 2) * 600 + 250;
+    const riser = (Math.PI / 2) * 375 + 250;
+    const hand = 4275 + 1450 + 3550 + teeBranch + 600 + 4175 + riser + 4500;
+    if (!pc.ok) issues.push(`path: ${pc.issues.join('; ')}`);
+    if (Math.abs(pc.lengthMm - hand) > 1e-6) issues.push(`centerline ${pc.lengthMm.toFixed(3)} != hand ${hand.toFixed(3)}`);
+    if (Math.abs(pc.polylineMm - 21000) > 1e-6) issues.push(`polyline ${pc.polylineMm}`);
+
+    // Independent measurement along the placed geometry.
+    const st = (seg: string) => lay.straights.find((s) => s.segmentId === seg)!.instance;
+    const fit = (seg: string, node: string) => lay.segmentEnds[`${seg}@${node}`].fitting!;
+    const byId = new Map(lay.fittings.map((f) => [f.id, f.instance]));
+    const redOn = (seg: string, node: string) => byId.get(lay.segmentEnds[`${seg}@${node}`].reducer!.id)!;
+    const through = (a: string, b: string, node: string) => routeWorldPoints(byId.get(fit(a, node).id)!, fit(a, node).portId, fit(b, node).portId);
+    const pieces: V3[][] = [
+      routeWorldPoints(st('s1'), 'PORT_A', 'PORT_B'),
+      through('s1', 's1b', 'VT'),
+      routeWorldPoints(st('s1b'), 'PORT_A', 'PORT_B'),
+      through('s1b', 'br', 'T'),
+      routeWorldPoints(redOn('br', 'T'), 'PORT_A', 'PORT_B'),
+      routeWorldPoints(st('br'), 'PORT_A', 'PORT_B'),
+      through('br', 'rs', 'B'),
+      routeWorldPoints(st('rs'), 'PORT_A', 'PORT_B'),
+    ];
+    let measured = 0;
+    let maxGap = 0;
+    pieces.forEach((pts, k) => {
+      for (let i = 1; i < pts.length; i++) measured += dist(pts[i - 1], pts[i]);
+      if (k > 0) maxGap = Math.max(maxGap, dist(pieces[k - 1][pieces[k - 1].length - 1], pts[0]));
+    });
+    if (maxGap > 0.01) issues.push(`centerline discontinuity ${maxGap.toFixed(4)} mm`);
+    // Arcs are sampled at ≤ 3°: chord deficit < 0.5 mm over this route.
+    if (Math.abs(measured - pc.lengthMm) > 0.5) issues.push(`measured ${measured.toFixed(3)} != reported ${pc.lengthMm.toFixed(3)}`);
+
+    // pathPoints (for drawing cables along the tray as built) follows the same geometry end to end.
+    const pts = lay.pathPoints(path) as V3[];
+    let ptsLength = 0;
+    for (let i = 1; i < pts.length; i++) ptsLength += dist(pts[i - 1], pts[i]);
+    if (Math.abs(ptsLength - measured) > 1e-6) issues.push(`pathPoints length ${ptsLength.toFixed(3)} != measured ${measured.toFixed(3)}`);
+    const nodeAt = (id: string) => lay.network.nodes.find((n) => n.id === id)!.position as V3;
+    if (pts.length < 2 || dist(pts[0], nodeAt('A')) > 1e-6 || dist(pts[pts.length - 1], nodeAt('J')) > 1e-6) issues.push('pathPoints does not run from A to J');
+
+    // One 90° turn (W600, R300): the drawing polyline is longer by Rc(2 − π/2) = 257.52 mm.
+    const one = resolveTrayNetwork(
+      trayNetworkFromPlan(
+        [
+          { id: 'a', x: 0, y: 0, z: 5 },
+          { id: 'b', x: 10, y: 0, z: 5 },
+          { id: 'c', x: 10, y: 10, z: 5 },
+        ],
+        [
+          { id: 'x', from: 'a', to: 'b', width: 600 },
+          { id: 'y', from: 'b', to: 'c', width: 600 },
+        ],
+        PlanFrames.PAGE_Y_DOWN_METRES
+      ),
+      LADDER()
+    ).pathCenterline(['x', 'y']);
+    const delta = one.polylineMm - one.lengthMm;
+    if (Math.abs(delta - 600 * (2 - Math.PI / 2)) > 1e-6) issues.push(`90° turn delta ${delta.toFixed(3)} (expected 257.522)`);
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AO',
+      '路徑實體中心線長度 (Route Centerline Length Through Fittings)',
+      passed,
+      'Reported = hand sum; = length measured along the placed world centerlines (gap ≤ 0.01 mm); single 90° turn is 257.52 mm shorter than the drawing polyline',
+      `PASS (中心線 ${(pc.lengthMm / 1000).toFixed(3)} m, 圖面折線 ${(pc.polylineMm / 1000).toFixed(3)} m, 實際網格量測一致)`,
+      issues.join('; '),
+      { issues, lengthMm: pc.lengthMm, polylineMm: pc.polylineMm, measured }
+    );
+  }
+
+  /**
+   * Case AP: Material take-off from the network: fittings per size, and straight trays cut from
+   * standard 3 m pieces per continuous run (runs through pass-through nodes are cut together).
+   */
+  public static testCaseAP_NetworkBom(): TestCaseResult {
+    const issues: string[] = [];
+    const bom = resolvedFixture().bom();
+    const qty = (id: string, specPart: string) => bom.fittings.filter((l) => l.definitionId === id && l.spec.includes(specPart)).reduce((a, l) => a + l.quantity, 0);
+    const expectQty = (id: string, specPart: string, n: number) => {
+      const q = qty(id, specPart);
+      if (q !== n) issues.push(`${id} ${specPart}: ${q} (expected ${n})`);
+    };
+    expectQty('FITTING_TEE', 'W=600mm', 2);
+    expectQty('FITTING_REDUCER_CENTER', 'W1=600mm -> W2=300mm', 2);
+    expectQty('FITTING_REDUCER_CENTER', 'W1=600mm -> W2=500mm', 1);
+    expectQty('FITTING_ELBOW_90', 'W=600mm', 1);
+    expectQty('FITTING_RISER_OUT_90', 'W=300mm', 2);
+    const total = bom.fittings.reduce((a, l) => a + l.quantity, 0);
+    if (total !== 8) issues.push(`${total} fittings (expected 8)`);
+
+    const line = (w: number) => bom.straights.find((l) => l.width === w);
+    const expectLine = (w: number, len: number, pieces: number, runs: number) => {
+      const l = line(w);
+      if (!l || Math.abs(l.totalLengthMm - len) > 1e-6 || l.pieces !== pieces || l.runs !== runs) {
+        issues.push(`W${w}: ${l ? `${l.totalLengthMm} mm, ${l.pieces} pcs, ${l.runs} runs` : 'missing'} (expected ${len} mm, ${pieces} pcs, ${runs} runs)`);
+      }
+    };
+    expectLine(600, 4275 + 3550 + 8550, 2 + 2 + 3, 3);
+    expectLine(500, 6675, 3, 1);
+    // 300: br 4175 (2), rs 4500 (2), vt 4500 (2), p1 + p2 = 3000 through a pass node (1, not 2).
+    expectLine(300, 4175 + 4500 + 4500 + 3000, 7, 4);
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AP',
+      '路網撿料 (Network Material Take-off: Fittings & 3 m Straight Pieces)',
+      passed,
+      'Tee 600 ×2, reducer 600→300 ×2, 600→500 ×1, elbow 90 ×1, riser out 300 ×2; straights per run from 3 m pieces (pass-through runs cut together)',
+      'PASS (8 個配件依規格分列, 直槽依連續段計算 3 m 支數)',
+      issues.join('; '),
+      { issues, bom }
+    );
+  }
+
+  /**
+   * Case AQ: Host materials. A host (e.g. a viewer colouring trays by engineering state) passes its
+   * own material; geometry is identical, the shared library materials are untouched and flagged.
+   */
+  public static testCaseAQ_HostMaterials(): TestCaseResult {
+    const issues: string[] = [];
+    const inst = createComponentFromProfile('FITTING_TEE', LADDER(), {}, 'aq_tee');
+    const host = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const before = Materials.Tray.color.getHex();
+    const hosted = inst.getThreeMesh({ materials: { body: host } });
+    const shared = inst.getThreeMesh();
+    const meshes = (g: THREE.Object3D) => {
+      const out: THREE.Mesh[] = [];
+      g.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) out.push(o as THREE.Mesh);
+      });
+      return out;
+    };
+    const hm = meshes(hosted);
+    const sm = meshes(shared);
+    if (hm.length === 0 || hm.some((m) => m.material !== host || m.userData.sharedMaterial !== false)) issues.push('host material not used on every mesh');
+    if (sm.some((m) => m.material !== Materials.Tray || m.userData.sharedMaterial !== true)) issues.push('default meshes not on the flagged shared material');
+    if (hosted === shared || inst.getThreeMesh() !== shared) issues.push('host build must be fresh; default build stays cached');
+    if (Materials.Tray.color.getHex() !== before) issues.push('shared material modified');
+    const box = (g: THREE.Object3D) => new THREE.Box3().setFromObject(g);
+    const bh = box(hosted);
+    const bs = box(shared);
+    if (bh.min.distanceTo(bs.min) > 1e-12 || bh.max.distanceTo(bs.max) > 1e-12) issues.push('geometry differs with host material');
+    const vh = hm.reduce((a, m) => a + m.geometry.getAttribute('position').count, 0);
+    const vs = sm.reduce((a, m) => a + m.geometry.getAttribute('position').count, 0);
+    if (vh !== vs) issues.push(`vertex count ${vh} != ${vs}`);
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AQ',
+      '宿主材質注入 (Host-Supplied Materials, Geometry Unchanged)',
+      passed,
+      'Host material on every mesh (flag false); default build on flagged shared material and cached; shared material untouched; identical bounds and vertex count',
+      `PASS (宿主材質套用於 ${hm.length} 個網格, 幾何完全相同, 共用材質未被修改)`,
       issues.join('; '),
       { issues }
     );

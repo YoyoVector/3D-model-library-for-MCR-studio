@@ -15,6 +15,11 @@ import {
   BomScope,
   Units,
   Transforms,
+  PlanFrames,
+  trayNetworkFromPlan,
+  normalizeTrayNetwork,
+  resolveTrayNetwork,
+  updateRouteForChanges,
 } from '../index.ts';
 
 export function testReadmeSnippets() {
@@ -51,6 +56,34 @@ export function testReadmeSnippets() {
   if (!bom.items.some((it) => it.spec.includes('R=300mm 90° T=125mm'))) {
     throw new Error('README Snippet 3: elbow BOM spec differs from the README');
   }
+
+  // Snippet 4: tray network → catalog fittings
+  const network = trayNetworkFromPlan(
+    [
+      { id: 'A', x: 0, y: 0, z: 6.4 }, { id: 'T', x: 10, y: 0, z: 6.4 }, { id: 'E', x: 20, y: 0, z: 6.4 },
+      { id: 'B', x: 10, y: 6, z: 6.4 }, { id: 'J', x: 10, y: 6, z: 1.4 },
+    ],
+    [
+      { id: 'main1', from: 'A', to: 'T', width: 600 }, { id: 'main2', from: 'T', to: 'E', width: 600 },
+      { id: 'branch', from: 'T', to: 'B', width: 300 }, { id: 'riser', from: 'B', to: 'J', width: 300 },
+    ],
+    PlanFrames.PAGE_Y_DOWN_METRES
+  );
+  const normalized = normalizeTrayNetwork(network, ladder);
+  const layout = resolveTrayNetwork(normalized.network, ladder);
+  if (layout.issues.length !== 0) throw new Error(`README Snippet 4: unexpected issues ${layout.issues.map((i) => i.code).join(',')}`);
+  const fittings = layout.fittings.map((f) => `${f.nodeId}:${f.definitionId}:${f.role === 'REDUCER' ? f.instance.effectiveParameters.outletWidth : f.instance.effectiveParameters.width}`).sort().join(',');
+  if (fittings !== 'B:FITTING_RISER_OUT_90:300,T:FITTING_REDUCER_CENTER:300,T:FITTING_TEE:600') {
+    throw new Error(`README Snippet 4: fittings ${fittings}`);
+  }
+  const route = layout.pathCenterline(updateRouteForChanges(['main1', 'branch', 'riser'], normalized));
+  if (!route.ok || route.lengthMm.toFixed(2) !== '20581.53' || route.polylineMm !== 21000) {
+    throw new Error(`README Snippet 4: route ${JSON.stringify(route)}`);
+  }
+  if (layout.pathPoints(['main1', 'branch', 'riser']).length < 10) throw new Error('README Snippet 4: pathPoints');
+  const trayMaterial = new THREE.MeshStandardMaterial();
+  for (const item of layout.instances()) scene.add(item.getThreeMesh({ materials: { body: trayMaterial } }));
+  if (layout.bom().straights.length !== 2) throw new Error('README Snippet 4: BOM straights');
 
   const _units = Units.mmToM(1000);
   const _dist = Transforms.distance([0, 0, 0], [1, 1, 1]);

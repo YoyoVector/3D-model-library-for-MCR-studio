@@ -167,6 +167,25 @@ export interface SubComponentReference {
 }
 
 /**
+ * Host-supplied materials for `buildGeometry` / `ComponentInstance.getThreeMesh`.
+ *
+ * The library owns geometry; a host application that styles trays by engineering state
+ * (selection, fill failure, active route, dimming) and disposes its own materials passes them
+ * here. Meshes built without a host material use the shared library `Materials` and carry
+ * `userData.sharedMaterial = true`: hosts must not dispose those.
+ */
+export interface GeometryBuildOptions {
+  materials?: {
+    /** Tray / fitting body: rails, rungs, ventilated floor. */
+    body?: THREE.Material;
+    /** Separator plate. Defaults to `body` when a body material is given. */
+    divider?: THREE.Material;
+    /** Optional small accessories (splice plates). Defaults to `body` when a body material is given. */
+    accessory?: THREE.Material;
+  };
+}
+
+/**
  * Canonical Component Definition.
  * Pure blueprint with dynamic derive functions (Single Source of Truth).
  */
@@ -192,7 +211,7 @@ export interface ComponentDefinition {
   getLocalPorts: (params: Record<string, any>) => ConnectionPortDefinition[];
   getCenterlineRoutes: (params: Record<string, any>) => CenterlineRouteDefinition[];
   getBounds: (params: Record<string, any>) => ComponentBoundsDefinition;
-  buildGeometry: (params: Record<string, any>) => THREE.Group;
+  buildGeometry: (params: Record<string, any>, options?: GeometryBuildOptions) => THREE.Group;
 
   /**
    * Optional: resolved engineering dimensions (e.g. catalogRadius, centerlineRadius, mainSpan)

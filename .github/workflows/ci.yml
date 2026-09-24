@@ -35,6 +35,15 @@ jobs:
       - name: Run Package Contract & Public API Smoke Test
         run: npm run test:contract
 
+      - name: Run Plain <script> Build Test (three r128 & current)
+        run: npm run test:script
+
+      - name: Verify Committed Build Artifacts Are Current (lib/, standalone/)
+        run: |
+          # Computers without npm use the committed lib/ and standalone/ files directly.
+          git status --porcelain -- lib standalone
+          test -z "$(git status --porcelain -- lib standalone)"
+
       - name: Run Isolated Consumer Pack & Smoke Test
         run: npm run test:smoke
 

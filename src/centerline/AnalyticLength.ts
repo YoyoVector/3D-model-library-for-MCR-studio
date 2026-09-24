@@ -49,4 +49,34 @@ export class AnalyticLength {
     const straight2 = Math.max(0, branchLengthMm - radiusMm);
     return straight1 + arc + straight2;
   }
+
+  /**
+   * Arc with straight tangent extensions at both ends (e.g. Catalog Elbow with 125mm tangents).
+   */
+  static arcWithTangents(radiusMm: number, angleDeg: number, tangentLengthMm: number = 0): number {
+    return 2 * tangentLengthMm + this.circularArc(radiusMm, angleDeg);
+  }
+
+  /**
+   * Reducer with straight tangent sections at inlet and outlet (e.g. 200mm + taper + 200mm).
+   */
+  static reducerWithTangents(
+    totalLengthMm: number,
+    lateralOffsetMm: number = 0,
+    inletTangentMm: number = 0,
+    outletTangentMm: number = 0
+  ): number {
+    const transitionLength = Math.max(0, totalLengthMm - inletTangentMm - outletTangentMm);
+    const transitionHypot = Math.hypot(transitionLength, lateralOffsetMm);
+    return inletTangentMm + transitionHypot + outletTangentMm;
+  }
+
+  /**
+   * Cross 90-degree turn branch route length (Straight tangent + Arc + Straight tangent).
+   */
+  static crossBranch(spanMm: number, radiusMm: number): number {
+    const straightArm = Math.max(0, spanMm / 2 - radiusMm);
+    const arc = (radiusMm * Math.PI) / 2;
+    return 2 * straightArm + arc;
+  }
 }

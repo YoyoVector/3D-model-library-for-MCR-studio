@@ -115,4 +115,28 @@ export declare class AcceptanceTestSuite {
      * Invariant Test V: Derived State Export Snapshot
      */
     static testCaseV_DerivedStateExport(): TestCaseResult;
+    /**
+     * Case W: Catalog Profile Test A (Page 27–37: Ventilated Through Type 100W x 50H)
+     */
+    static testCaseW_CatalogProfileA(): TestCaseResult;
+    /**
+     * Case X: Catalog Profile Test B (Page 38–47: Ventilated Through Type 300W x 100H)
+     */
+    static testCaseX_CatalogProfileB(): TestCaseResult;
+    /**
+     * Case Y: Horizontal Cross Fitting Validation (Page 10)
+     */
+    static testCaseY_HorizontalCross(): TestCaseResult;
+    /**
+     * Case Z: Generic Angle Vendor Standards (30°, 45°, 60°, 90° from Catalog)
+     */
+    static testCaseZ_GenericAngleVendor(): TestCaseResult;
+    /**
+     * Case AA: Vendor Dimension Formulas Reality Check
+     */
+    static testCaseAA_VendorDimensionFormulas(): TestCaseResult;
+    /**
+     * Case AB: Profile Consistency Invariant & Provenance Integrity
+     */
+    static testCaseAB_ProfileConsistencyInvariant(): TestCaseResult;
 }

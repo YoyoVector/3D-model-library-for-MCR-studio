@@ -1684,6 +1684,114 @@ export class ComponentRegistry {
       buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'RIGHT' } as any),
     });
 
+    // 31. FITTING_CROSS (Horizontal Cross)
+    this.register({
+      schemaVersion: '2.0.0',
+      componentVersion: '1.0.0',
+      id: 'FITTING_CROSS',
+      name: 'Horizontal Cross Fitting',
+      nameZh: '水平四通十字托架 (Cross)',
+      family: 'FITTING',
+      origin: ComponentOrigin.NEW_COMPONENT,
+      role: ComponentRole.FITTING,
+      description: 'Factory-formed 4-way horizontal Cross fitting with 4 symmetrical ports and smooth corner fillets.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
+      defaultParameters: {
+        width: 600,
+        depth: 100,
+        length: 1450, // span along both X and Z axes (W + 2*R + 2*T = 600 + 600 + 250 = 1450)
+        radius: 300,
+        tangentLength: 125,
+      },
+      provenance: {
+        width: { source: 'Catalog Page 10 (CNS 13303 / NEMA VE 1 Aluminum Cable Tray)', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'Standard widths 100~1000mm' },
+        depth: { source: 'Catalog Page 10 side rail height H=150mm', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'Standard 100/150mm depth' },
+        length: { source: 'Catalog Page 10: Span = W + 2*R + 250mm', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '125mm tangent extension at all 4 ports' },
+        radius: { source: 'Catalog Page 10 bend fillet R=300/600/900mm', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: 'R=300mm corner radius' },
+      },
+      getLocalPorts: (params) => {
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const r = params.radius || 300;
+        const t = params.tangentLength ?? 125;
+        const span = params.length || (w + 2 * r + 2 * t);
+        const halfSpan = span / 2;
+
+        return [
+          {
+            id: 'PORT_A',
+            name: 'Inlet Port A (-X)',
+            localPosition: [-halfSpan, 0, 0],
+            localDirection: [-1, 0, 0],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_B',
+            name: 'Outlet Port B (+X)',
+            localPosition: [halfSpan, 0, 0],
+            localDirection: [1, 0, 0],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_C',
+            name: 'Branch Port C (+Z)',
+            localPosition: [0, 0, halfSpan],
+            localDirection: [0, 0, 1],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_D',
+            name: 'Branch Port D (-Z)',
+            localPosition: [0, 0, -halfSpan],
+            localDirection: [0, 0, -1],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+        ];
+      },
+      getCenterlineRoutes: (params) => {
+        const w = params.width || 600;
+        const r = params.radius || 300;
+        const t = params.tangentLength ?? 125;
+        const span = params.length || (w + 2 * r + 2 * t);
+
+        return [
+          RouteGenerator.createStraightX('PORT_A', 'PORT_B', span),
+          RouteGenerator.createStraightZ('PORT_D', 'PORT_C', span),
+          RouteGenerator.createCrossCornerRoute('PORT_A', 'PORT_C', span, r, -1, 1),
+          RouteGenerator.createCrossCornerRoute('PORT_A', 'PORT_D', span, r, -1, -1),
+          RouteGenerator.createCrossCornerRoute('PORT_B', 'PORT_C', span, r, 1, 1),
+          RouteGenerator.createCrossCornerRoute('PORT_B', 'PORT_D', span, r, 1, -1),
+        ];
+      },
+      getBounds: (params) => {
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const r = params.radius || 300;
+        const t = params.tangentLength ?? 125;
+        const span = params.length || (w + 2 * r + 2 * t);
+        const halfSpan = span / 2;
+        return {
+          min: [-halfSpan, -d / 2, -halfSpan],
+          max: [halfSpan, d / 2, halfSpan],
+        };
+      },
+      buildGeometry: (params) => GeometryGenerators.buildHorizontalCross(params as any),
+    });
+
     // -------------------------------------------------------------
     // 4. DERIVED_ASSEMBLY (2 items)
     // -------------------------------------------------------------

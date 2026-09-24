@@ -48,6 +48,7 @@ import {
   type WorldPortDefinition,
   type BomScopeType,
 } from './index.ts';
+import { TraySystemProfiles } from './registry/TraySystemProfile.ts';
 
 // Theme Presets Definition
 export type ThemeId = 'DARK_SLATE' | 'STUDIO_LIGHT' | 'CAD_BLUEPRINT' | 'WARM_STUDIO' | 'CYBER_CONTRAST';
@@ -800,7 +801,7 @@ export default function App() {
             }`}
           >
             <Play className="w-3.5 h-3.5 text-amber-400" />
-            <span>Case A~P 測試</span>
+            <span>28項驗收 (Case A~AB)</span>
           </button>
           <button
             onClick={() => setActiveTab('BOM')}
@@ -1242,6 +1243,39 @@ export default function App() {
               </span>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">{currentDef.description}</p>
+          </div>
+
+          {/* Catalog Preset Selector */}
+          <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-200">型錄標準規格集 (Catalog Preset)</span>
+              <span className="text-[10px] text-cyan-400 font-mono">Page 27–47</span>
+            </div>
+            <select
+              defaultValue="CUSTOM"
+              onChange={(e) => {
+                const pid = e.target.value;
+                if (pid === 'CUSTOM') return;
+                const profile = TraySystemProfiles.get(pid);
+                if (profile) {
+                  setComponentParams((prev) => ({
+                    ...prev,
+                    width: profile.width,
+                    depth: profile.height,
+                    radius: profile.defaultRadius,
+                    tangentLength: profile.tangentLength ?? 125,
+                  }));
+                }
+              }}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
+            >
+              <option value="CUSTOM">-- 自訂參數 (Custom Dynamic Values) --</option>
+              {TraySystemProfiles.getAll().map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.width}W x {p.height}H) - P.{p.source.pages.join(',')}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Dynamic Parameters Tuning (Single Source of Truth) */}

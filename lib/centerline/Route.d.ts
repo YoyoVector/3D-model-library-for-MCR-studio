@@ -6,10 +6,18 @@ export declare class RouteGenerator {
     static createStraight(fromPort: string, toPort: string, lengthMm: number, numSamples?: number): CenterlineRouteDefinition;
     static createStraightZ(fromPort: string, toPort: string, lengthMm: number, numSamples?: number): CenterlineRouteDefinition;
     /**
-     * Generates a circular horizontal elbow centerline in the XZ plane.
-     * Arc center at origin (0, 0, 0) or offset by radius.
+     * Generates a straight centerline route along the X axis.
      */
-    static createHorizontalElbow(fromPort: string, toPort: string, radiusMm: number, angleDeg: number, numSamples?: number): CenterlineRouteDefinition;
+    static createStraightX(fromPort: string, toPort: string, lengthMm: number, numSamples?: number): CenterlineRouteDefinition;
+    /**
+     * Generates a circular horizontal elbow centerline in the XZ plane.
+     * Arc center at origin (0, 0, 0) with optional straight tangent extensions.
+     */
+    static createHorizontalElbow(fromPort: string, toPort: string, radiusMm: number, angleDeg: number, numSamples?: number, tangentLengthMm?: number): CenterlineRouteDefinition;
+    /**
+     * Generates a 90-degree corner branch route for Horizontal Cross fittings (Straight + Arc + Straight).
+     */
+    static createCrossCornerRoute(fromPort: string, toPort: string, spanMm: number, radiusMm: number, signX: number, signZ: number, numSamples?: number): CenterlineRouteDefinition;
     /**
      * Generates a vertical riser centerline in the XY or YZ plane.
      */

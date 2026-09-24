@@ -6,3 +6,4 @@
 export * from './ComponentRegistry.ts';
 export * from './CatalogStandards.ts';
 export * from './AssemblyRegistry.ts';
+export * from './TraySystemProfile.ts';

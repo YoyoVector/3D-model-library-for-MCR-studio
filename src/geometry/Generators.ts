@@ -696,4 +696,78 @@ export class GeometryGenerators {
     group.add(mesh);
     return group;
   }
+
+  /**
+   * Horizontal Cross (Page 10 in Vendor Catalog).
+   * 4 symmetrical branches along X and Z axes with corner rails and rungs.
+   */
+  static buildHorizontalCross(params: {
+    width: number; // mm
+    depth: number; // mm
+    radius?: number; // mm
+    length?: number; // mm (full span along both axes, typically W + 2*R + 250)
+    tangentLength?: number; // mm
+    isIS?: boolean;
+  }): THREE.Group {
+    const group = new THREE.Group();
+    const w = Units.mmToM(params.width);
+    const d = Units.mmToM(params.depth);
+    const rMm = params.radius ?? 300;
+    const tMm = params.tangentLength ?? 125;
+    const spanMm = params.length ?? (params.width + 2 * rMm + 2 * tMm);
+    const span = Units.mmToM(spanMm);
+    const t = 0.04;
+    const mat = params.isIS ? Materials.TrayIS : Materials.Tray;
+
+    const armHalfSpan = span / 2;
+    const cornerArmLen = armHalfSpan - w / 2;
+
+    // Outer rails for each quadrant
+    const quadSigns = [
+      { sx: 1, sz: 1 },
+      { sx: -1, sz: 1 },
+      { sx: -1, sz: -1 },
+      { sx: 1, sz: -1 },
+    ];
+
+    quadSigns.forEach(({ sx, sz }) => {
+      // X-arm rail segment
+      const railX = new THREE.Mesh(new THREE.BoxGeometry(cornerArmLen, d, t), mat);
+      railX.position.set(sx * (w / 2 + cornerArmLen / 2), 0, sz * (w / 2));
+      railX.castShadow = true;
+      group.add(railX);
+
+      // Z-arm rail segment
+      const railZ = new THREE.Mesh(new THREE.BoxGeometry(t, d, cornerArmLen), mat);
+      railZ.position.set(sx * (w / 2), 0, sz * (w / 2 + cornerArmLen / 2));
+      railZ.castShadow = true;
+      group.add(railZ);
+    });
+
+    // Rungs along the 4 branches
+    const rungD = 0.02;
+    const rungW = 0.035;
+
+    // X-axis rungs
+    for (let x = w / 2 + 0.1; x <= armHalfSpan - 0.05; x += 0.2) {
+      [-1, 1].forEach((sign) => {
+        const rung = new THREE.Mesh(new THREE.BoxGeometry(rungW, rungD, w), mat);
+        rung.position.set(sign * x, -d / 2 + rungD / 2, 0);
+        rung.castShadow = true;
+        group.add(rung);
+      });
+    }
+
+    // Z-axis rungs
+    for (let z = w / 2 + 0.1; z <= armHalfSpan - 0.05; z += 0.2) {
+      [-1, 1].forEach((sign) => {
+        const rung = new THREE.Mesh(new THREE.BoxGeometry(w, rungD, rungW), mat);
+        rung.position.set(0, -d / 2 + rungD / 2, sign * z);
+        rung.castShadow = true;
+        group.add(rung);
+      });
+    }
+
+    return group;
+  }
 }

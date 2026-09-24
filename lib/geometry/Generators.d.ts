@@ -184,4 +184,16 @@ export declare class GeometryGenerators {
         colorHex?: number;
         emissiveHex?: number;
     }): THREE.Group;
+    /**
+     * Horizontal Cross (Page 10 in Vendor Catalog).
+     * 4 symmetrical branches along X and Z axes with corner rails and rungs.
+     */
+    static buildHorizontalCross(params: {
+        width: number;
+        depth: number;
+        radius?: number;
+        length?: number;
+        tangentLength?: number;
+        isIS?: boolean;
+    }): THREE.Group;
 }

@@ -29,4 +29,16 @@ export declare class AnalyticLength {
      * Standard geometry: half length of main run + branch projection.
      */
     static teeBranch(mainLengthMm: number, branchLengthMm: number, radiusMm?: number): number;
+    /**
+     * Arc with straight tangent extensions at both ends (e.g. Catalog Elbow with 125mm tangents).
+     */
+    static arcWithTangents(radiusMm: number, angleDeg: number, tangentLengthMm?: number): number;
+    /**
+     * Reducer with straight tangent sections at inlet and outlet (e.g. 200mm + taper + 200mm).
+     */
+    static reducerWithTangents(totalLengthMm: number, lateralOffsetMm?: number, inletTangentMm?: number, outletTangentMm?: number): number;
+    /**
+     * Cross 90-degree turn branch route length (Straight tangent + Arc + Straight tangent).
+     */
+    static crossBranch(spanMm: number, radiusMm: number): number;
 }

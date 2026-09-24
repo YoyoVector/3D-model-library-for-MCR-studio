@@ -203,4 +203,10 @@ export declare class AcceptanceTestSuite {
      * own material; geometry is identical, the shared library materials are untouched and flagged.
      */
     static testCaseAQ_HostMaterials(): TestCaseResult;
+    /**
+     * Case AR: Bend width rule and designer choices per node. Reducing before a bend, a larger radius
+     * and a narrower tee re-derive reducers, straight lengths, route lengths and meshes; every
+     * configuration is physically joined. Invalid choices are errors; choices on plain nodes warn.
+     */
+    static testCaseAR_FittingChoices(): TestCaseResult;
 }

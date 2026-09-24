@@ -69,7 +69,9 @@ export type NetworkIssueCode =
   | 'FITTING_NOT_OFFERED'
   | 'SEGMENT_TOO_SHORT'
   | 'VERTICAL_RUN_TWISTED'
-  | 'FITTING_MISALIGNED';
+  | 'FITTING_MISALIGNED'
+  | 'OVERRIDE_INVALID'
+  | 'OVERRIDE_UNUSED';
 
 export interface NetworkIssue {
   severity: 'ERROR' | 'WARNING';
@@ -99,6 +101,44 @@ export interface TrayNetworkOptions {
   verticalTeeSide?: (nodeId: string) => 1 | -1 | undefined;
   /** Prefix for instance ids (default 'net:'). */
   idPrefix?: string;
+  /**
+   * Width of a bend (horizontal elbow or vertical bend) whose two legs differ in width:
+   * - 'WIDEST_LEG' (default): the bend takes the wider width; the reducer sits on the narrower leg
+   *   after the bend.
+   * - 'NARROWEST_LEG': reduce first — the reducer sits on the wider leg before the bend, and the
+   *   bend takes the narrower (smaller, cheaper) width.
+   * Tees and crosses always take the widest leg unless a node override says otherwise.
+   */
+  bendWidth?: 'WIDEST_LEG' | 'NARROWEST_LEG';
+  /**
+   * Manual fitting choices per node (e.g. edited by a designer in the host). Everything else —
+   * reducers, straight lengths, centerline lengths, BOM and meshes — follows from the choice.
+   */
+  nodeOverrides?: Record<string, FittingOverride>;
+}
+
+/** Manual choice for the fitting on one node. Invalid choices are reported and ignored. */
+export interface FittingOverride {
+  /**
+   * Fitting width W: a catalog width between the narrowest and widest leg. Legs narrower than W
+   * get a reducer after the fitting; legs wider than W get a reducer before it.
+   */
+  width?: number;
+  /** Catalog bend radius R (profile.allowedRadii, e.g. 300 / 600 / 900). */
+  radius?: number;
+}
+
+/** What a host can offer a designer for the fitting on a node. */
+export interface FittingChoices {
+  nodeId: string;
+  definitionId: string;
+  width: number;
+  /** Catalog widths between the narrowest and widest leg. */
+  widthChoices: number[];
+  radius: number;
+  radiusChoices: number[];
+  /** Override currently applied to this node (as given by the host). */
+  override?: FittingOverride;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,14 +420,25 @@ function placeFittingOnNode(
   return null;
 }
 
-/** Places a reducer whose wide port sits at `at`, facing back along `-dir`. */
-function placeReducer(instanceId: string, definitionId: string, params: Record<string, any>, at: Vec3, dir: Vec3, up: Vec3): ComponentInstance | null {
+/**
+ * Places a reducer on a leg with `innerPort` at `at`, facing back along `-dir` (toward the node);
+ * the other port continues along `dir`. PORT_A is the wide end, PORT_B the narrow end.
+ */
+function placeReducer(
+  instanceId: string,
+  definitionId: string,
+  params: Record<string, any>,
+  innerPort: 'PORT_A' | 'PORT_B',
+  at: Vec3,
+  dir: Vec3,
+  up: Vec3
+): ComponentInstance | null {
   const def = ComponentRegistry.get(definitionId);
   if (!def) return null;
-  const portA = def.getLocalPorts(params).find((p) => p.id === 'PORT_A')!;
-  const q = rotationFromFrames(portA.localDirection, portA.localUp, vec.scale(dir, -1), up);
+  const port = def.getLocalPorts(params).find((p) => p.id === innerPort)!;
+  const q = rotationFromFrames(port.localDirection, port.localUp, vec.scale(dir, -1), up);
   if (!q) return null;
-  const position = vec.sub(at, applyQ(q, portA.localPosition));
+  const position = vec.sub(at, applyQ(q, port.localPosition));
   return new ComponentInstance(instanceId, def, params, placementOf(q, position));
 }
 
@@ -430,7 +481,12 @@ export interface SegmentEnd {
   /** Fitting on the node and the port facing this segment. */
   fitting?: { id: string; portId: string };
   /** Reducer between the fitting (or node) and the straight. */
-  reducer?: { id: string };
+  reducer?: {
+    id: string;
+    /** Reducer port facing the node / fitting, and the one facing the straight tray. */
+    innerPort: 'PORT_A' | 'PORT_B';
+    outerPort: 'PORT_A' | 'PORT_B';
+  };
 }
 
 export interface PathCenterline {
@@ -477,6 +533,8 @@ export interface TrayNetworkLayout {
    * fitting routes, in travel order. For drawing cables along the tray as built.
    */
   pathPoints(segmentIds: string[]): Vec3[];
+  /** The fitting on a node and the choices a designer may make for it (undefined: no fitting). */
+  fittingChoices(nodeId: string): FittingChoices | undefined;
   bom(): TrayNetworkBom;
 }
 
@@ -522,14 +580,76 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
   };
   const params = (definitionId: string, overrides: Record<string, any>) => resolveProfileParameters(definitionId, profile, overrides);
 
-  const reducerOnLeg = (nodeId: string, fittingWidth: number, leg: Leg, at: Vec3, up: Vec3): SegmentEnd['reducer'] | undefined => {
-    if (leg.segment.width >= fittingWidth) return undefined;
+  /**
+   * Reducer between the fitting (width `innerWidth`, port at `at`) and the leg's straight tray.
+   * Leg narrower than the fitting: wide end (PORT_A) at the fitting — reduce after it.
+   * Leg wider than the fitting: narrow end (PORT_B) at the fitting — reduce before it.
+   */
+  const reducerOnLeg = (
+    nodeId: string,
+    innerWidth: number,
+    leg: Leg,
+    at: Vec3,
+    up: Vec3
+  ): { ref: NonNullable<SegmentEnd['reducer']>; outerPoint: Vec3 } | undefined => {
+    const w = leg.segment.width;
+    if (w === innerWidth) return undefined;
     if (!offered('FITTING_REDUCER_CENTER', nodeId)) return undefined;
+    const narrower = w < innerWidth;
+    const innerPort = narrower ? 'PORT_A' : 'PORT_B';
+    const outerPort = narrower ? 'PORT_B' : 'PORT_A';
     const id = `${prefix}${nodeId}:${leg.segment.id}:REDUCER`;
-    const inst = placeReducer(id, 'FITTING_REDUCER_CENTER', params('FITTING_REDUCER_CENTER', { inletWidth: fittingWidth, outletWidth: leg.segment.width }), at, leg.dir, up);
+    const p = params('FITTING_REDUCER_CENTER', { inletWidth: Math.max(w, innerWidth), outletWidth: Math.min(w, innerWidth) });
+    const inst = placeReducer(id, 'FITTING_REDUCER_CENTER', p, innerPort, at, leg.dir, up);
     if (!inst) return undefined;
-    fittings.push({ id, nodeId, role: 'REDUCER', definitionId: 'FITTING_REDUCER_CENTER', instance: inst, legs: [{ segmentId: leg.segment.id, portId: 'PORT_B' }] });
-    return { id };
+    fittings.push({ id, nodeId, role: 'REDUCER', definitionId: 'FITTING_REDUCER_CENTER', instance: inst, legs: [{ segmentId: leg.segment.id, portId: outerPort }] });
+    return { ref: { id, innerPort, outerPort }, outerPoint: worldPort(inst, outerPort).worldPosition };
+  };
+
+  /** Fitting width and radius on a node: rule (bendWidth) first, then the designer's override. */
+  const choices = new Map<string, FittingChoices>();
+  const fittingParams = (nodeId: string, plan: Extract<NodePlan, { kind: 'FITTING' }>): Record<string, any> => {
+    const widths = plan.legs.map((l) => l.segment.width);
+    const min = Math.min(...widths);
+    const max = Math.max(...widths);
+    let width = plan.legs.length === 2 && options.bendWidth === 'NARROWEST_LEG' ? min : max;
+    const extra: Record<string, any> = {};
+    const ov = options.nodeOverrides?.[nodeId];
+    if (ov?.width !== undefined) {
+      if (profile.allowedWidths.includes(ov.width) && ov.width >= min && ov.width <= max) width = ov.width;
+      else {
+        issues.push({
+          severity: 'ERROR',
+          code: 'OVERRIDE_INVALID',
+          nodeId,
+          message: `W=${ov.width} is not possible for ${plan.definitionId} at ${nodeId}: choose a catalog width from ${min} to ${max}.`,
+          values: { width: ov.width },
+        });
+      }
+    }
+    if (ov?.radius !== undefined) {
+      if (profile.allowedRadii.includes(ov.radius)) extra.radius = ov.radius;
+      else {
+        issues.push({
+          severity: 'ERROR',
+          code: 'OVERRIDE_INVALID',
+          nodeId,
+          message: `R=${ov.radius} at ${nodeId} is not a catalog radius (${profile.allowedRadii.join(' / ')}).`,
+          values: { radius: ov.radius },
+        });
+      }
+    }
+    const p = params(plan.definitionId, { width, ...extra });
+    choices.set(nodeId, {
+      nodeId,
+      definitionId: plan.definitionId,
+      width,
+      widthChoices: profile.allowedWidths.filter((w) => w >= min && w <= max),
+      radius: p.radius,
+      radiusChoices: [...profile.allowedRadii],
+      ...(ov ? { override: { ...ov } } : {}),
+    });
+    return p;
   };
 
   const reachOf = (nodePos: Vec3, leg: Leg, point: Vec3, nodeId: string, what: string): number => {
@@ -549,7 +669,8 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
     plans.set(nodeId, plan);
     if (plan.kind !== 'FITTING' || !offered(plan.definitionId, nodeId)) continue;
     const id = `${prefix}${nodeId}:${plan.definitionId}`;
-    const placed = placeFittingOnNode(id, plan.definitionId, params(plan.definitionId, { width: plan.width }), node.position, plan.ports, plan.legs, tol);
+    const fp = fittingParams(nodeId, plan);
+    const placed = placeFittingOnNode(id, plan.definitionId, fp, node.position, plan.ports, plan.legs, tol);
     if (!placed) {
       issues.push({ severity: 'ERROR', code: 'JUNCTION_NOT_IN_CATALOG', nodeId, message: `${plan.definitionId} cannot be oriented to the segments at ${nodeId}.` });
       continue;
@@ -564,11 +685,17 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
     });
     for (const [portId, leg] of placed.portLegs) {
       const wp = worldPort(placed.instance, portId);
-      const reducer = reducerOnLeg(nodeId, plan.width, leg, wp.worldPosition, wp.worldUp);
+      const reducer = reducerOnLeg(nodeId, fp.width, leg, wp.worldPosition, wp.worldUp);
       const reach = reducer
-        ? reachOf(node.position, leg, worldPort(fittings[fittings.length - 1].instance, 'PORT_B').worldPosition, nodeId, 'Reducer')
+        ? reachOf(node.position, leg, reducer.outerPoint, nodeId, 'Reducer')
         : reachOf(node.position, leg, wp.worldPosition, nodeId, plan.definitionId);
-      ends.set(endKey(leg.segment.id, nodeId), { nodeId, segmentId: leg.segment.id, reachMm: reach, up: wp.worldUp, fitting: { id, portId }, reducer });
+      ends.set(endKey(leg.segment.id, nodeId), { nodeId, segmentId: leg.segment.id, reachMm: reach, up: wp.worldUp, fitting: { id, portId }, reducer: reducer?.ref });
+    }
+  }
+
+  for (const nodeId of Object.keys(options.nodeOverrides ?? {})) {
+    if (!choices.has(nodeId)) {
+      issues.push({ severity: 'WARNING', code: 'OVERRIDE_UNUSED', nodeId, message: `Fitting choice for ${nodeId} is ignored: there is no bend, tee or cross on that node.` });
     }
   }
 
@@ -599,8 +726,8 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
     if (plan.kind === 'INLINE_REDUCER') {
       ends.set(endKey(plan.wide.segment.id, nodeId), { nodeId, segmentId: plan.wide.segment.id, reachMm: 0, up: null });
       const reducer = reducerOnLeg(nodeId, plan.wide.segment.width, plan.narrow, node.position, upOfSegment(plan.narrow.segment));
-      const reach = reducer ? reachOf(node.position, plan.narrow, worldPort(fittings[fittings.length - 1].instance, 'PORT_B').worldPosition, nodeId, 'Reducer') : 0;
-      ends.set(endKey(plan.narrow.segment.id, nodeId), { nodeId, segmentId: plan.narrow.segment.id, reachMm: reach, up: null, reducer });
+      const reach = reducer ? reachOf(node.position, plan.narrow, reducer.outerPoint, nodeId, 'Reducer') : 0;
+      ends.set(endKey(plan.narrow.segment.id, nodeId), { nodeId, segmentId: plan.narrow.segment.id, reachMm: reach, up: null, reducer: reducer?.ref });
     }
     // Ends, unresolved junctions and fittings that could not be placed: the straight runs to the
     // node (the ERROR issue already reports what the catalog cannot build there).
@@ -726,6 +853,12 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
     if (segs.length === 0 || segs.some((s) => !s)) return out;
     const shared = (x: TrayNetworkSegment, y: TrayNetworkSegment) => [x.from, x.to].find((n) => n === y.from || n === y.to);
     let current = segs.length > 1 ? (shared(segs[0]!, segs[1]!) === segs[0]!.from ? segs[0]!.to : segs[0]!.from) : segs[0]!.from;
+    // A route that starts or ends inside a fitting runs straight to the node (as pathCenterline counts it).
+    const insideFitting = (seg: TrayNetworkSegment, nodeId: string) => {
+      const e = ends.get(endKey(seg.id, nodeId));
+      return !!(e?.fitting || e?.reducer);
+    };
+    if (insideFitting(segs[0]!, current)) push([graph.nodes.get(current)!.position]);
     for (let i = 0; i < segs.length; i++) {
       const s = segs[i]!;
       const next = s.from === current ? s.to : s.to === current ? s.from : undefined;
@@ -735,14 +868,15 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
       if (i < segs.length - 1) {
         const eIn = ends.get(endKey(s.id, next));
         const eOut = ends.get(endKey(segs[i + 1]!.id, next));
-        if (eIn?.reducer) push(routePoints(byId.get(eIn.reducer.id)!.instance, 'PORT_B', 'PORT_A'));
+        if (eIn?.reducer) push(routePoints(byId.get(eIn.reducer.id)!.instance, eIn.reducer.outerPort, eIn.reducer.innerPort));
         if (eIn?.fitting && eOut?.fitting && eIn.fitting.id === eOut.fitting.id) {
           push(routePoints(byId.get(eIn.fitting.id)!.instance, eIn.fitting.portId, eOut.fitting.portId));
         }
-        if (eOut?.reducer) push(routePoints(byId.get(eOut.reducer.id)!.instance, 'PORT_A', 'PORT_B'));
+        if (eOut?.reducer) push(routePoints(byId.get(eOut.reducer.id)!.instance, eOut.reducer.innerPort, eOut.reducer.outerPort));
       }
       current = next;
     }
+    if (insideFitting(segs[segs.length - 1]!, current)) push([graph.nodes.get(current)!.position]);
     return out;
   };
 
@@ -788,6 +922,7 @@ export function resolveTrayNetwork(network: TrayNetwork, profile: TraySystemProf
     instances: () => [...fittings.map((f) => f.instance), ...straights.map((s) => s.instance)],
     pathCenterline,
     pathPoints,
+    fittingChoices: (nodeId: string) => choices.get(nodeId),
     bom,
   };
 }
@@ -806,7 +941,15 @@ export interface NormalizedTrayNetwork {
  * Reach of the fittings on a vertical-tee replacement stub, measured by resolving a canonical
  * layout with the same resolver (tee branch + optional reducer, and the vertical bend).
  */
-function stubLength(profile: TraySystemProfile, mainWidth: number, branchWidth: number, goesUp: boolean, tol: TrayNetworkOptions): number {
+function stubLength(
+  profile: TraySystemProfile,
+  mainWidth: number,
+  branchWidth: number,
+  goesUp: boolean,
+  options: TrayNetworkOptions,
+  teeNodeId: string,
+  bendNodeId: string
+): number {
   const far = 100000;
   const canonical: TrayNetwork = {
     nodes: [
@@ -823,7 +966,11 @@ function stubLength(profile: TraySystemProfile, mainWidth: number, branchWidth: 
       { id: 'v', from: 'S', to: 'V', width: branchWidth },
     ],
   };
-  const r = resolveTrayNetwork(canonical, profile, tol);
+  // The designer's choices for the tee and the bend node apply to the canonical copy as well.
+  const nodeOverrides: Record<string, FittingOverride> = {};
+  if (options.nodeOverrides?.[teeNodeId]) nodeOverrides.N = options.nodeOverrides[teeNodeId];
+  if (options.nodeOverrides?.[bendNodeId]) nodeOverrides.S = options.nodeOverrides[bendNodeId];
+  const r = resolveTrayNetwork(canonical, profile, { ...options, nodeOverrides });
   return (r.segmentEnds[endKey('s', 'N')]?.reachMm ?? 0) + (r.segmentEnds[endKey('s', 'S')]?.reachMm ?? 0);
 }
 
@@ -901,7 +1048,8 @@ export function normalizeTrayNetwork(network: TrayNetwork, profile: TraySystemPr
     }
     const mainWidth = Math.max(main[0].segment.width, main[1].segment.width);
     const goesUp = vert.dir[1] > 0;
-    const L = stubLength(profile, mainWidth, vert.segment.width, goesUp, options);
+    const stubNodeId = `${prefix}${nodeId}~VT`;
+    const L = stubLength(profile, mainWidth, vert.segment.width, goesUp, options, nodeId, stubNodeId);
     const perp = vec.normalize(vec.cross(WORLD_UP, vec.scale(main[0].dir, -1)));
     const far = graph.nodes.get(vert.otherId)!;
     const clearance = (side: 1 | -1) => {
@@ -920,7 +1068,6 @@ export function normalizeTrayNetwork(network: TrayNetwork, profile: TraySystemPr
     };
     const side = options.verticalTeeSide?.(nodeId) ?? (clearance(1) >= clearance(-1) ? 1 : -1);
     const offset = vec.scale(perp, side * L);
-    const stubNodeId = `${prefix}${nodeId}~VT`;
     const stubSegId = `${prefix}${vert.segment.id}~STUB`;
     const stubPos = vec.clean(vec.add(node.position, offset));
     nodes.push({ id: stubNodeId, position: stubPos });

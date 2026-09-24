@@ -85,6 +85,14 @@ export function testReadmeSnippets() {
   for (const item of layout.instances()) scene.add(item.getThreeMesh({ materials: { body: trayMaterial } }));
   if (layout.bom().straights.length !== 2) throw new Error('README Snippet 4: BOM straights');
 
+  // Snippet 4b: designer choices
+  const options = { bendWidth: 'NARROWEST_LEG' as const, nodeOverrides: { T: { radius: 600 } } };
+  const layout2 = resolveTrayNetwork(normalizeTrayNetwork(network, ladder, options).network, ladder, options);
+  const ch = layout2.fittingChoices('T');
+  if (!layout2.ok || !ch || ch.definitionId !== 'FITTING_TEE' || ch.width !== 600 || ch.widthChoices.join(',') !== '300,400,500,600' || ch.radius !== 600 || ch.radiusChoices.join(',') !== '300,600,900') {
+    throw new Error(`README Snippet 4b: fittingChoices ${JSON.stringify(ch)}`);
+  }
+
   const _units = Units.mmToM(1000);
   const _dist = Transforms.distance([0, 0, 0], [1, 1, 1]);
   if (_units !== 1.0 || _dist <= 0) {

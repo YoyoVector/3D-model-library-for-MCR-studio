@@ -40,6 +40,7 @@ import {
   updateRouteForChanges,
   type TrayNetwork,
   type TrayNetworkLayout,
+  type TrayNetworkOptions,
 } from '../network/TrayNetwork.ts';
 
 export interface TestCaseResult {
@@ -156,8 +157,36 @@ function networkFixture(): TrayNetwork {
   return trayNetworkFromPlan(nodes, segments, PlanFrames.PAGE_Y_DOWN_METRES);
 }
 
-function resolvedFixture(): TrayNetworkLayout {
-  return resolveTrayNetwork(normalizeTrayNetwork(networkFixture(), LADDER()).network, LADDER());
+function resolvedFixture(options: TrayNetworkOptions = {}): TrayNetworkLayout {
+  return resolveTrayNetwork(normalizeTrayNetwork(networkFixture(), LADDER(), options).network, LADDER(), options);
+}
+
+/** Physical check of every pair of coincident ports in a layout, and fitting ports left open. */
+function networkJoints(lay: TrayNetworkLayout): { joints: number; failures: string[] } {
+  const inst = lay.instances();
+  const failures: string[] = [];
+  const joined = new Set<string>();
+  let joints = 0;
+  for (let i = 0; i < inst.length; i++) {
+    for (let j = i + 1; j < inst.length; j++) {
+      for (const pa of inst[i].getWorldPorts()) {
+        for (const pb of inst[j].getWorldPorts()) {
+          if (dist(pa.worldPosition, pb.worldPosition) > 0.01) continue;
+          joints++;
+          joined.add(`${inst[i].instanceId}.${pa.id}`);
+          joined.add(`${inst[j].instanceId}.${pb.id}`);
+          const jc = AssemblyValidator.checkJoint(inst[i], pa.id, inst[j], pb.id);
+          if (!jc.passed) failures.push(`${inst[i].instanceId}.${pa.id} ↔ ${inst[j].instanceId}.${pb.id}: ${jc.issues.join('; ')}`);
+        }
+      }
+    }
+  }
+  lay.fittings.forEach((f) =>
+    f.instance.getWorldPorts().forEach((p) => {
+      if (!joined.has(`${f.id}.${p.id}`)) failures.push(`${f.id}.${p.id} is not connected`);
+    })
+  );
+  return { joints, failures };
 }
 
 /** World centerline points of one route through an instance, oriented from `fromPort`. */
@@ -240,6 +269,7 @@ export class AcceptanceTestSuite {
       () => this.testCaseAO_NetworkCenterline(),
       () => this.testCaseAP_NetworkBom(),
       () => this.testCaseAQ_HostMaterials(),
+      () => this.testCaseAR_FittingChoices(),
     ];
 
     const results: TestCaseResult[] = tests.map((t, i) => {
@@ -1964,6 +1994,90 @@ export class AcceptanceTestSuite {
       passed,
       'Host material on every mesh (flag false); default build on flagged shared material and cached; shared material untouched; identical bounds and vertex count',
       `PASS (宿主材質套用於 ${hm.length} 個網格, 幾何完全相同, 共用材質未被修改)`,
+      issues.join('; '),
+      { issues }
+    );
+  }
+
+  /**
+   * Case AR: Bend width rule and designer choices per node. Reducing before a bend, a larger radius
+   * and a narrower tee re-derive reducers, straight lengths, route lengths and meshes; every
+   * configuration is physically joined. Invalid choices are errors; choices on plain nodes warn.
+   */
+  public static testCaseAR_FittingChoices(): TestCaseResult {
+    const issues: string[] = [];
+    const lengths = (lay: TrayNetworkLayout) => Object.fromEntries(lay.straights.map((s) => [s.segmentId, s.lengthMm]));
+    const expectLengths = (label: string, lay: TrayNetworkLayout, exp: Record<string, number>) => {
+      const got = lengths(lay);
+      Object.entries(exp).forEach(([id, L]) => {
+        if (Math.abs((got[id] ?? NaN) - L) > 1e-6) issues.push(`${label}: ${id} = ${got[id]} (expected ${L})`);
+      });
+    };
+    const expectJoined = (label: string, lay: TrayNetworkLayout) => {
+      if (!lay.ok) issues.push(`${label}: ${lay.issues.filter((i) => i.severity === 'ERROR').map((i) => i.message).join(' | ')}`);
+      const j = networkJoints(lay);
+      j.failures.forEach((f) => issues.push(`${label}: ${f}`));
+      return j.joints;
+    };
+    const fitting = (lay: TrayNetworkLayout, nodeId: string) => lay.fittings.find((f) => f.nodeId === nodeId && f.role === 'FITTING')!;
+    const reducerAt = (lay: TrayNetworkLayout, seg: string, node: string) => lay.segmentEnds[`${seg}@${node}`]?.reducer;
+
+    // 1. Reduce first: elbow at E takes W500 (Rc 550, reach 675); the 600→500 reducer moves onto s2.
+    const narrow = resolvedFixture({ bendWidth: 'NARROWEST_LEG' });
+    if (fitting(narrow, 'E').instance.effectiveParameters.width !== 500) issues.push('NARROWEST_LEG: elbow at E is not W500');
+    const r = reducerAt(narrow, 's2', 'E');
+    if (!r || r.innerPort !== 'PORT_B' || reducerAt(narrow, 's3', 'E')) issues.push('NARROWEST_LEG: reducer not on s2 with its narrow end at the elbow');
+    expectLengths('NARROWEST_LEG', narrow, { s2: 8000, s3: 7325, s1: 4275, br: 4175 });
+    const jNarrow = expectJoined('NARROWEST_LEG', narrow);
+    const pc = narrow.pathCenterline(['s2', 's3']);
+    const pts = narrow.pathPoints(['s2', 's3']) as V3[];
+    let ptsLen = 0;
+    for (let i = 1; i < pts.length; i++) ptsLen += dist(pts[i - 1], pts[i]);
+    if (!pc.ok || Math.abs(ptsLen - pc.lengthMm) > 0.5) issues.push(`NARROWEST_LEG: route ${pc.lengthMm.toFixed(2)} vs points ${ptsLen.toFixed(2)}`);
+    if (!narrow.bom().fittings.some((l) => l.definitionId === 'FITTING_ELBOW_90' && l.spec.includes('W=500mm'))) issues.push('NARROWEST_LEG: BOM has no W500 elbow');
+
+    // 2. Designer picks R600 for the tee at T: main reach 300 + 600 + 125 = 1025, branch 1025 + 600.
+    const r600 = resolvedFixture({ nodeOverrides: { T: { radius: 600 } } });
+    if (fitting(r600, 'T').instance.effectiveParameters.radius !== 600) issues.push('R600 override not applied');
+    expectLengths('T R600', r600, { s1b: 3250, s2: 8250, br: 3875 });
+    const jR600 = expectJoined('T R600', r600);
+
+    // 3. Designer picks a W300 tee on the 600 main run: both main legs reduce before the tee.
+    const w300 = resolvedFixture({ nodeOverrides: { T: { width: 300 } } });
+    ['s1b', 's2'].forEach((seg) => {
+      const red = reducerAt(w300, seg, 'T');
+      if (!red || red.innerPort !== 'PORT_B') issues.push(`T W300: ${seg} has no reducer with its narrow end at the tee`);
+    });
+    if (reducerAt(w300, 'br', 'T')) issues.push('T W300: branch must not need a reducer');
+    expectLengths('T W300', w300, { s1b: 3100, s2: 8100, br: 4925 });
+    const jW300 = expectJoined('T W300', w300);
+
+    // 4. A choice on the vertical tee node changes the replacement stub: 1025 + 600 + 500 = 2125.
+    const vt = normalizeTrayNetwork(networkFixture(), LADDER(), { nodeOverrides: { VT: { radius: 600 } } });
+    const stub = vt.issues.find((i) => i.code === 'VERTICAL_TEE_REPLACED')?.values?.stubMm;
+    if (stub !== 2125) issues.push(`vertical tee stub with R600 = ${stub} (expected 2125)`);
+    expectJoined('VT R600', resolveTrayNetwork(vt.network, LADDER(), { nodeOverrides: { VT: { radius: 600 } } }));
+
+    // 5. Choices a host can offer, and invalid / unused choices.
+    const ch = r600.fittingChoices('T');
+    if (!ch || ch.definitionId !== 'FITTING_TEE' || ch.widthChoices.join(',') !== '300,400,500,600' || ch.radiusChoices.join(',') !== '300,600,900' || ch.radius !== 600 || ch.override?.radius !== 600) {
+      issues.push(`fittingChoices(T) = ${JSON.stringify(ch)}`);
+    }
+    if (r600.fittingChoices('A') !== undefined) issues.push('fittingChoices on a tray end must be undefined');
+    const bad = resolvedFixture({ nodeOverrides: { E: { width: 700 }, T: { radius: 450 }, A: { radius: 600 } } });
+    const codes = bad.issues.map((i) => `${i.severity}:${i.code}:${i.nodeId}`);
+    ['ERROR:OVERRIDE_INVALID:E', 'ERROR:OVERRIDE_INVALID:T', 'WARNING:OVERRIDE_UNUSED:A'].forEach((c) => {
+      if (!codes.includes(c)) issues.push(`missing ${c}`);
+    });
+    if (fitting(bad, 'E').instance.effectiveParameters.width !== 600) issues.push('invalid width override must fall back to the rule');
+
+    const passed = issues.length === 0;
+    return result(
+      'Case AR',
+      '配件寬度規則與人工選擇 (Bend Width Rule & Designer Fitting Choices)',
+      passed,
+      'Reduce-first bend W500 (s2 8000, s3 7325); tee R600 (s1b 3250, s2 8250, br 3875); tee W300 (s1b 3100, s2 8100, br 4925); VT R600 stub 2125; all joints pass; choices listed; invalid → ERROR, unused → WARNING',
+      `PASS (先縮徑彎頭、R600 三通、W300 三通與垂直三通選擇皆重算正確, ${jNarrow + jR600 + jW300} 個接頭實體檢查通過)`,
       issues.join('; '),
       { issues }
     );

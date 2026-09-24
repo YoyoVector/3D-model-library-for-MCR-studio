@@ -42,7 +42,7 @@ export interface TrayNetwork {
     nodes: TrayNetworkNode[];
     segments: TrayNetworkSegment[];
 }
-export type NetworkIssueCode = 'INVALID_NETWORK' | 'WIDTH_ADJUSTED' | 'HEIGHT_ADJUSTED' | 'HEIGHT_NOT_IN_CATALOG' | 'WIDTH_NOT_IN_CATALOG' | 'VERTICAL_TEE_REPLACED' | 'VERTICAL_TEE_UNRESOLVED' | 'ANGLE_NOT_IN_CATALOG' | 'JUNCTION_NOT_IN_CATALOG' | 'FITTING_NOT_OFFERED' | 'SEGMENT_TOO_SHORT' | 'VERTICAL_RUN_TWISTED' | 'FITTING_MISALIGNED';
+export type NetworkIssueCode = 'INVALID_NETWORK' | 'WIDTH_ADJUSTED' | 'HEIGHT_ADJUSTED' | 'HEIGHT_NOT_IN_CATALOG' | 'WIDTH_NOT_IN_CATALOG' | 'VERTICAL_TEE_REPLACED' | 'VERTICAL_TEE_UNRESOLVED' | 'ANGLE_NOT_IN_CATALOG' | 'JUNCTION_NOT_IN_CATALOG' | 'FITTING_NOT_OFFERED' | 'SEGMENT_TOO_SHORT' | 'VERTICAL_RUN_TWISTED' | 'FITTING_MISALIGNED' | 'OVERRIDE_INVALID' | 'OVERRIDE_UNUSED';
 export interface NetworkIssue {
     severity: 'ERROR' | 'WARNING';
     code: NetworkIssueCode;
@@ -105,6 +105,42 @@ export interface TrayNetworkOptions {
     verticalTeeSide?: (nodeId: string) => 1 | -1 | undefined;
     /** Prefix for instance ids (default 'net:'). */
     idPrefix?: string;
+    /**
+     * Width of a bend (horizontal elbow or vertical bend) whose two legs differ in width:
+     * - 'WIDEST_LEG' (default): the bend takes the wider width; the reducer sits on the narrower leg
+     *   after the bend.
+     * - 'NARROWEST_LEG': reduce first — the reducer sits on the wider leg before the bend, and the
+     *   bend takes the narrower (smaller, cheaper) width.
+     * Tees and crosses always take the widest leg unless a node override says otherwise.
+     */
+    bendWidth?: 'WIDEST_LEG' | 'NARROWEST_LEG';
+    /**
+     * Manual fitting choices per node (e.g. edited by a designer in the host). Everything else —
+     * reducers, straight lengths, centerline lengths, BOM and meshes — follows from the choice.
+     */
+    nodeOverrides?: Record<string, FittingOverride>;
+}
+/** Manual choice for the fitting on one node. Invalid choices are reported and ignored. */
+export interface FittingOverride {
+    /**
+     * Fitting width W: a catalog width between the narrowest and widest leg. Legs narrower than W
+     * get a reducer after the fitting; legs wider than W get a reducer before it.
+     */
+    width?: number;
+    /** Catalog bend radius R (profile.allowedRadii, e.g. 300 / 600 / 900). */
+    radius?: number;
+}
+/** What a host can offer a designer for the fitting on a node. */
+export interface FittingChoices {
+    nodeId: string;
+    definitionId: string;
+    width: number;
+    /** Catalog widths between the narrowest and widest leg. */
+    widthChoices: number[];
+    radius: number;
+    radiusChoices: number[];
+    /** Override currently applied to this node (as given by the host). */
+    override?: FittingOverride;
 }
 /** Builds a world-frame network from host plan coordinates through ONE PlanFrame. */
 export declare function trayNetworkFromPlan(nodes: Array<PlanPoint & {
@@ -147,6 +183,9 @@ export interface SegmentEnd {
     /** Reducer between the fitting (or node) and the straight. */
     reducer?: {
         id: string;
+        /** Reducer port facing the node / fitting, and the one facing the straight tray. */
+        innerPort: 'PORT_A' | 'PORT_B';
+        outerPort: 'PORT_A' | 'PORT_B';
     };
 }
 export interface PathCenterline {
@@ -190,6 +229,8 @@ export interface TrayNetworkLayout {
      * fitting routes, in travel order. For drawing cables along the tray as built.
      */
     pathPoints(segmentIds: string[]): Vec3[];
+    /** The fitting on a node and the choices a designer may make for it (undefined: no fitting). */
+    fittingChoices(nodeId: string): FittingChoices | undefined;
     bom(): TrayNetworkBom;
 }
 /**

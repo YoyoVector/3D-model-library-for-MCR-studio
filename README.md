@@ -19,7 +19,7 @@
 - **One engineering frame** (`PlanFrames`) — right-handed, +Y up, mm. Host drawing coordinates convert through one named frame, so LEFT / RIGHT and turn directions match the drawing.
 - **Zero double-counting BOM** with one line per size; specs read from the engineering dimensions.
 - **Works without npm** — `lib/index.iife.js` is a plain `<script>` build on a global `THREE` (tested on three r128 and current), and `standalone/MCR-3D-Component-Library.html` is the viewer as one file that opens by double-click.
-- **Acceptance suite** — 43 cases including vendor golden fixtures, mesh curvature probes, negative controls, hand-derived assembly demos, network layouts and plan-frame handedness.
+- **Acceptance suite** — 44 cases including vendor golden fixtures, mesh curvature probes, negative controls, hand-derived assembly demos, network layouts, designer fitting choices and plan-frame handedness.
 
 ---
 
@@ -130,14 +130,30 @@ Rules (catalog first; see Cases AM–AP):
 
 | Situation | Built as |
 | :--- | :--- |
-| Level turn 30 / 45 / 60 / 90° | Horizontal elbow of the widest leg; reducer on a narrower leg |
-| Level ↔ plumb (or catalog-angle incline) | Vertical inside (rising) / outside (falling) bend of the widest leg |
+| Level turn 30 / 45 / 60 / 90° | Horizontal elbow of the widest leg; reducer on a narrower leg (`bendWidth: 'NARROWEST_LEG'`: reduce first, elbow of the narrowest leg) |
+| Level ↔ plumb (or catalog-angle incline) | Vertical inside (rising) / outside (falling) bend; width as for elbows |
 | Main run with a perpendicular level branch | Tee of the widest leg; reducer on each narrower leg (the catalog tee has one W) |
 | Two level runs crossing at 90° | Cross; reducers as for the tee |
 | Width change on a straight line | Centre reducer (600 long) into the narrower segment |
 | Vertical tee (plumb branch off a level run) | `normalizeTrayNetwork`: level tee + horizontal stub + vertical bend; the run's free end moves sideways |
 | Width not in the catalog | `normalizeTrayNetwork`: next wider catalog width |
 | Other angles, Y junctions, segments shorter than their fittings, parts the series does not offer | ERROR issue — redesign; nothing is approximated |
+
+**Designer choices.** A host that lets people edit fittings stores only their choices and resolves
+again; reducers, straight lengths, route lengths, BOM and meshes follow:
+
+```typescript
+const options = {
+  bendWidth: 'NARROWEST_LEG',                              // project rule: reduce before bends
+  nodeOverrides: { T: { radius: 600 } },                    // per-node fitting width / catalog radius
+};
+const layout2 = resolveTrayNetwork(normalizeTrayNetwork(network, ladder, options).network, ladder, options);
+layout2.fittingChoices('T'); // { definitionId: 'FITTING_TEE', width: 600, widthChoices: [300, 400, 500, 600], radius: 600, radiusChoices: [300, 600, 900], … }
+```
+
+A fitting narrower than a leg gets the reducer before it, wider than a leg after it. Invalid choices
+are ERROR `OVERRIDE_INVALID` (the rule value is used); choices on nodes without a fitting are WARNING
+`OVERRIDE_UNUSED`. Integration notes for MCR-Studio: [`docs/integration/mcr-studio/`](docs/integration/mcr-studio/).
 
 ---
 
@@ -208,7 +224,7 @@ No npm on the computer? Open `standalone/MCR-3D-Component-Library.html` directly
 
 ```bash
 npm run lint           # tsc --noEmit
-npm run test           # 43-case acceptance & engineering suite
+npm run test           # 44-case acceptance & engineering suite
 npm run build          # library (lib/: ESM, CJS, IIFE) + demo app (dist/) + standalone viewer (standalone/)
 npm run test:contract  # ESM / CJS public API contract
 npm run test:script    # lib/index.iife.js on a global THREE: three r128 and current, identical geometry

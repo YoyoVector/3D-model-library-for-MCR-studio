@@ -15,6 +15,7 @@ import { Transforms } from '../core/Transforms.ts';
 import { PortFrame } from '../ports/PortFrame.ts';
 import { AnalyticLength } from '../centerline/AnalyticLength.ts';
 import { LEGACY_FITTING_BASELINES } from './baselines/legacyFittingBaselines.ts';
+import { computeGeometryBounds } from '../geometry/GeometryBoundsValidator.ts';
 
 export interface TestCaseResult {
   id: string; // 'Case A', 'Case B', ...
@@ -755,13 +756,12 @@ export class AcceptanceTestSuite {
         return;
       }
 
+      // Expected: Engineering Definition getBounds (Source of Truth)
       const bounds = def.getBounds(def.defaultParameters);
-      const mesh = def.buildGeometry(def.defaultParameters);
-      mesh.updateMatrixWorld(true);
-
-      const box = new THREE.Box3().setFromObject(mesh);
-      const geoMinMm = [box.min.x * 1000, box.min.y * 1000, box.min.z * 1000];
-      const geoMaxMm = [box.max.x * 1000, box.max.y * 1000, box.max.z * 1000];
+      // Actual: Geometry procedural mesh bounds from independent validation utility
+      const geoBounds = computeGeometryBounds(def, def.defaultParameters);
+      const geoMinMm = geoBounds.min;
+      const geoMaxMm = geoBounds.max;
 
       const axes = ['X', 'Y', 'Z'];
 

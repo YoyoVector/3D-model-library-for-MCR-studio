@@ -22,20 +22,26 @@ import { GeometryGenerators } from '../geometry/Generators.ts';
  * Helper to compute horizontal elbow bounds dynamically based on angle and radius.
  */
 function computeHorizontalElbowBounds(r: number, w: number, d: number, angleDeg: number): ComponentBoundsDefinition {
-  const halfW = w / 2;
-  const halfD = d / 2;
-  const aRad = (Math.abs(angleDeg) * Math.PI) / 180;
-  const endX = r * Math.cos(aRad);
-  const endZ = -r * Math.sin(aRad);
+  const t = 40;
+  const rungW = 35;
+  const aDeg = Math.abs(angleDeg);
+  const aRad = (aDeg * Math.PI) / 180;
 
-  const minX = Math.min(-halfW, endX - halfW, (r - halfW) * Math.cos(aRad));
-  const maxX = r + halfW;
-  const minZ = Math.min(-r - halfW, endZ - halfW, -Math.sin(aRad) * (r + halfW));
-  const maxZ = halfW;
+  const outerR = r + w / 2 + t / 2;
+  const stepDeg = 15;
+  const count = Math.max(2, Math.round(aDeg / stepDeg));
+  let minZ = 0;
+  for (let i = 1; i < count; i++) {
+    const a = (i * aRad) / count;
+    const centerZ = -r * Math.sin(a);
+    const halfZ = (w / 2) * Math.sin(a) + (rungW / 2) * Math.cos(a);
+    const rungMinZ = centerZ - halfZ;
+    if (rungMinZ < minZ) minZ = rungMinZ;
+  }
 
   return {
-    min: [minX, -halfD, minZ],
-    max: [maxX, halfD, maxZ],
+    min: [0, -d / 2, minZ],
+    max: [outerR, d / 2, outerR],
   };
 }
 
@@ -45,19 +51,117 @@ function computeHorizontalElbowBounds(r: number, w: number, d: number, angleDeg:
 function computeVerticalRiserBounds(r: number, w: number, d: number, angleDeg: number, isOutside: boolean): ComponentBoundsDefinition {
   const halfW = w / 2;
   const halfD = d / 2;
-  const aRad = (Math.abs(angleDeg) * Math.PI) / 180;
-  const endX = r * Math.cos(aRad);
-  const endY = (isOutside ? -1 : 1) * r * Math.sin(aRad);
+  const t = 40;
+  const aDeg = Math.abs(angleDeg);
+  const aRad = (aDeg * Math.PI) / 180;
 
-  const minX = Math.min(-halfD, endX - halfD, (r - halfD) * Math.cos(aRad));
-  const maxX = r + halfD;
-  const minY = isOutside ? Math.min(-r - halfD, endY - halfD) : -halfD;
-  const maxY = isOutside ? halfD : Math.max(r + halfD, endY + halfD);
+  const outerR = r + halfD;
+  const innerR = Math.max(0, r - halfD);
+
+  const minX = aDeg >= 90 ? 0 : Math.min(innerR * Math.cos(aRad), outerR * Math.cos(aRad));
+  const maxX = outerR;
+
+  let minY = 0;
+  let maxY = 0;
+  if (!isOutside) {
+    minY = 0;
+    maxY = aDeg >= 90 ? outerR : outerR * Math.sin(aRad);
+  } else {
+    minY = aDeg >= 90 ? -outerR : -outerR * Math.sin(aRad);
+    maxY = 0;
+  }
+
+  const minZ = -halfW - t / 2;
+  const maxZ = halfW + t / 2;
 
   return {
-    min: [minX, minY, -halfW],
-    max: [maxX, maxY, halfW],
+    min: [minX, minY, minZ],
+    max: [maxX, maxY, maxZ],
   };
+}
+
+/**
+ * Helper to compute reducer bounds dynamically based on widths, depth, and length.
+ */
+function computeReducerBounds(
+  params: { inletWidth?: number; outletWidth?: number; depth?: number; length?: number },
+  type: 'CONCENTRIC' | 'LEFT' | 'RIGHT'
+): ComponentBoundsDefinition {
+  const w1 = params.inletWidth || 600;
+  const w2 = params.outletWidth || 450;
+  const d = params.depth || 100;
+  const l = params.length || 500;
+  const t = 40;
+  const rungW = 35;
+
+  let xLeft1 = -w1 / 2;
+  let xLeft2 = -w2 / 2;
+  let xRight1 = w1 / 2;
+  let xRight2 = w2 / 2;
+
+  if (type === 'LEFT') {
+    xLeft1 = -w1 / 2;
+    xLeft2 = -w1 / 2;
+    xRight1 = w1 / 2;
+    xRight2 = -w1 / 2 + w2;
+  } else if (type === 'RIGHT') {
+    xRight1 = w1 / 2;
+    xRight2 = w1 / 2;
+    xLeft1 = -w1 / 2;
+    xLeft2 = w1 / 2 - w2;
+  }
+
+  const dxL = xLeft2 - xLeft1;
+  const railLenL = Math.hypot(dxL, l);
+  const angleL = Math.atan2(dxL, l);
+  const halfExtXL = (t / 2) * Math.cos(angleL) + (railLenL / 2) * Math.abs(Math.sin(angleL));
+  const midXL = (xLeft1 + xLeft2) / 2;
+  const minRailXL = midXL - halfExtXL;
+  const maxRailXL = midXL + halfExtXL;
+
+  const dxR = xRight2 - xRight1;
+  const railLenR = Math.hypot(dxR, l);
+  const angleR = Math.atan2(dxR, l);
+  const halfExtXR = (t / 2) * Math.cos(angleR) + (railLenR / 2) * Math.abs(Math.sin(angleR));
+  const midXR = (xRight1 + xRight2) / 2;
+  const minRailXR = midXR - halfExtXR;
+  const maxRailXR = midXR + halfExtXR;
+
+  const minX = Math.min(minRailXL, minRailXR);
+  const maxX = Math.max(maxRailXL, maxRailXR);
+  const minY = -d / 2;
+  const maxY = d / 2;
+  const minZ = -l / 2 - rungW / 2;
+  const maxZ = l / 2 + rungW / 2;
+
+  return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
+}
+
+/**
+ * Helper to compute straight tray bounds dynamically with splice plates and rungs.
+ */
+function computeTrayStraightBounds(params: {
+  width?: number;
+  depth?: number;
+  length?: number;
+  hasSplicePlates?: boolean;
+}): ComponentBoundsDefinition {
+  const w = params.width || 600;
+  const d = params.depth || 100;
+  const l = params.length || 3000;
+  const boltLen = 55;
+  const spL = 120;
+  const rungW = 35;
+  const hasSp = params.hasSplicePlates !== false;
+
+  const minX = hasSp ? -w / 2 - boltLen / 2 : -w / 2 - 20;
+  const maxX = hasSp ? w / 2 + boltLen / 2 : w / 2 + 20;
+  const minY = -d / 2;
+  const maxY = d / 2;
+  const minZ = -l / 2 - rungW / 2;
+  const maxZ = hasSp ? l / 2 + spL / 2 : l / 2;
+
+  return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
 }
 
 /**
@@ -82,23 +186,8 @@ export class ComponentRegistry {
   }
 
   private static register(def: ComponentDefinition): void {
-    const originalGetBounds = def.getBounds;
-    def.getBounds = (params: Record<string, any>) => {
-      try {
-        const mesh = def.buildGeometry(params);
-        mesh.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(mesh);
-        const base = originalGetBounds ? originalGetBounds(params) : undefined;
-        const roundMm = (n: number) => Math.round(n * 1000 * 100) / 100 + 0;
-        return {
-          min: [roundMm(box.min.x), roundMm(box.min.y), roundMm(box.min.z)],
-          max: [roundMm(box.max.x), roundMm(box.max.y), roundMm(box.max.z)],
-          clearanceEnvelope: base?.clearanceEnvelope,
-        };
-      } catch {
-        return originalGetBounds(params);
-      }
-    };
+    // Engineering Definition is the independent Source of Truth.
+    // getBounds() remains purely deterministic data/math calculation without Three.js Mesh dependency.
     this._definitions.set(def.id, def);
   }
 
@@ -165,12 +254,7 @@ export class ComponentRegistry {
       getCenterlineRoutes: (params) => [
         RouteGenerator.createStraight('PORT_A', 'PORT_B', params.length || 3000),
       ],
-      getBounds: (params) => {
-        const hw = (params.width || 600) / 2;
-        const hd = (params.depth || 100) / 2;
-        const hl = (params.length || 3000) / 2;
-        return { min: [-hw, -hd, -hl], max: [hw, hd, hl] };
-      },
+      getBounds: (params) => computeTrayStraightBounds(params),
       buildGeometry: (params) => GeometryGenerators.buildStraightTray(params as any),
     });
 
@@ -1475,15 +1559,7 @@ export class ComponentRegistry {
         const offset = (w2 - w1) / 2;
         return [RouteGenerator.createReducer('PORT_A', 'PORT_B', params.length || 500, offset)];
       },
-      getBounds: (params) => {
-        const w1 = params.inletWidth || 600;
-        const halfD = (params.depth || 100) / 2;
-        const halfL = (params.length || 500) / 2;
-        return {
-          min: [-w1 / 2, -halfD, -halfL],
-          max: [w1 / 2, halfD, halfL],
-        };
-      },
+      getBounds: (params) => computeReducerBounds(params, 'LEFT'),
       buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'LEFT' } as any),
     });
 
@@ -1515,7 +1591,6 @@ export class ComponentRegistry {
         const w2 = params.outletWidth || 450;
         const d = params.depth || 100;
         const halfL = (params.length || 500) / 2;
-
         return [
           {
             id: 'PORT_A',
@@ -1542,15 +1617,7 @@ export class ComponentRegistry {
       getCenterlineRoutes: (params) => [
         RouteGenerator.createReducer('PORT_A', 'PORT_B', params.length || 500, 0),
       ],
-      getBounds: (params) => {
-        const w1 = params.inletWidth || 600;
-        const halfD = (params.depth || 100) / 2;
-        const halfL = (params.length || 500) / 2;
-        return {
-          min: [-w1 / 2, -halfD, -halfL],
-          max: [w1 / 2, halfD, halfL],
-        };
-      },
+      getBounds: (params) => computeReducerBounds(params, 'CONCENTRIC'),
       buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'CONCENTRIC' } as any),
     });
 
@@ -1613,15 +1680,7 @@ export class ComponentRegistry {
         const offset = (w1 - w2) / 2;
         return [RouteGenerator.createReducer('PORT_A', 'PORT_B', params.length || 500, offset)];
       },
-      getBounds: (params) => {
-        const w1 = params.inletWidth || 600;
-        const halfD = (params.depth || 100) / 2;
-        const halfL = (params.length || 500) / 2;
-        return {
-          min: [-w1 / 2, -halfD, -halfL],
-          max: [w1 / 2, halfD, halfL],
-        };
-      },
+      getBounds: (params) => computeReducerBounds(params, 'RIGHT'),
       buildGeometry: (params) => GeometryGenerators.buildReducer({ ...params, type: 'RIGHT' } as any),
     });
 
@@ -1727,7 +1786,7 @@ export class ComponentRegistry {
       },
       getLocalPorts: () => [],
       getCenterlineRoutes: () => [],
-      getBounds: () => ({ min: [-1500, 0, -3200], max: [1500, 8000, 3200] }),
+      getBounds: () => ({ min: [-1350, 0, -3000], max: [1350, 8000, 3000] }),
       subComponents: [
         { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'B_COL_L', relativePlacement: { position: [-1200, 0, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },
         { definitionId: 'STRUCT_COLUMN', instanceSuffix: 'B_COL_R', relativePlacement: { position: [1200, 0, 0], quaternion: [0, 0, 0, 1] }, isPurchasedSeparately: false },

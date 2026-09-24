@@ -10,6 +10,7 @@ import type * as THREE from 'three';
 export declare const AssumptionLevel: {
     readonly VERIFIED_PROJECT_REQUIREMENT: "VERIFIED_PROJECT_REQUIREMENT";
     readonly VERIFIED_VENDOR_CATALOG: "VERIFIED_VENDOR_CATALOG";
+    readonly ENGINEERING_DERIVED: "ENGINEERING_DERIVED";
     readonly DEMO_DEFAULT: "DEMO_DEFAULT";
     readonly PLACEHOLDER: "PLACEHOLDER";
     readonly UNVERIFIED: "UNVERIFIED";
@@ -59,6 +60,22 @@ export interface EngineeringPlacement {
     quaternion: [number, number, number, number];
 }
 /**
+ * Physical connection face of a port: the body section that must coincide with the mating
+ * component's face. Expressed in the port frame (right = up x direction, up = localUp),
+ * relative to the port point. The component body must terminate on the port plane with
+ * exactly this envelope.
+ */
+export interface ConnectionFaceDefinition {
+    /** Tray style at the face ('LADDER' | 'VENTILATED_THROUGH'); mating faces must share it. */
+    style?: string;
+    /** Half of the overall body width along the port right axis (mm). */
+    halfWidth: number;
+    /** Lowest body extent along the port up axis (mm, relative to the port point). */
+    minUp: number;
+    /** Highest body extent along the port up axis (mm, relative to the port point). */
+    maxUp: number;
+}
+/**
  * Definition of a connection port in local component coordinates.
  */
 export interface ConnectionPortDefinition {
@@ -71,6 +88,8 @@ export interface ConnectionPortDefinition {
     depth: number;
     connectionType: 'TRAY_END' | 'CONDUIT' | 'GLAND' | 'FLANGE' | 'STRUCTURAL';
     gender?: 'MALE' | 'FEMALE' | 'NEUTRAL';
+    /** Physical connection face (tray ends). Optional for non-tray ports. */
+    connectionFace?: ConnectionFaceDefinition;
 }
 /**
  * Runtime derived world port state.
@@ -85,6 +104,7 @@ export interface WorldPortDefinition {
     width: number;
     depth: number;
     connectionType: 'TRAY_END' | 'CONDUIT' | 'GLAND' | 'FLANGE' | 'STRUCTURAL';
+    connectionFace?: ConnectionFaceDefinition;
 }
 /**
  * Centerline route between a pair of ports.
@@ -151,5 +171,10 @@ export interface ComponentDefinition {
     getCenterlineRoutes: (params: Record<string, any>) => CenterlineRouteDefinition[];
     getBounds: (params: Record<string, any>) => ComponentBoundsDefinition;
     buildGeometry: (params: Record<string, any>) => THREE.Group;
+    /**
+     * Optional: resolved engineering dimensions (e.g. catalogRadius, centerlineRadius, mainSpan)
+     * from the same formula that drives ports / routes / bounds / geometry. Used for display and tests.
+     */
+    getEngineeringDimensions?: (params: Record<string, any>) => Record<string, number | string>;
     subComponents?: SubComponentReference[];
 }

@@ -5,6 +5,61 @@ All notable changes to the `@mcr-studio/parametric-3d` library will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Vendor-catalog recovery of the partial Gemini work (see `docs/handoff/recovery-audit.md`,
+`docs/catalog-validation/`). Version number left for the maintainer to decide.
+
+### Changed — engineering behaviour (review before upgrading)
+- **`radius` is the catalog inner radius R** for all bends, tee and cross (was the centerline
+  radius). Centerline radius = R + W/2 (horizontal) or R + H/2 (vertical).
+  *Migration:* pass `radiusReference: 'CENTERLINE'` to keep legacy centerline semantics, or use
+  `radius = legacyRadius − W/2` (horizontal) / `− H/2` (vertical). Generic defaults were chosen so the
+  generic horizontal elbow keeps its legacy ports (W 600, R 300 → centerline 600).
+- **`tangentLength` is honoured**: bend / tee / cross ports sit at the end of the tangent
+  (vendor profiles: 125 mm). Generic elbows / risers default to 0 (legacy pure arc).
+- **Tee / Cross**: radius-R curved transitions (catalog p.9 / p.10); spans derived from
+  W + 2R + 2T. `length` / `branchLength` are accepted as legacy aliases that fix the tangents.
+- **Vertical bends**: port `localUp` is the tray up (was the width axis — risers mated sideways);
+  local frame centred on the bend centre; inside / outside bottom side per catalog.
+- **Reducers**: `FITTING_REDUCER_LEFT` / `RIGHT` handedness follows the vendor drawing (LEFT keeps
+  the left rail straight viewed from the wide end); optional straight ends via `tangentLength`
+  (generic default 100, vendor 200 with length 600).
+- **Straight tray**: splice plates are an optional accessory (`hasSplicePlates: true`, default off),
+  excluded from bounds and connection checks; end rungs no longer protrude past the ports.
+- BOM lines are keyed by definition **and** specification; specs read the engineering dimensions
+  (the wrong "HDG 85 µm" finish text was removed).
+- `getComponentSubCategory` uses prefix matching (STRUCT_CROSS_BEAM is no longer a "tee / cross").
+
+### Added
+- `src/geometry/TrayLayouts.ts`, `SweepPath.ts`, `TrayMeshBuilder.ts`: single engineering formula
+  layer for every tray family; `ComponentDefinition.getEngineeringDimensions()`.
+- `ConnectionFaceDefinition` on ports; `ConnectionValidator` code `STYLE_MISMATCH`;
+  `MateResult.upDotProduct`.
+- `AssemblyValidator` (joint-plane separation, termination, face match, centerline continuity),
+  `buildMatedAssembly`, `ASSEMBLY_DEMOS`.
+- Vendor profiles corrected against the PDF: allowed widths / radii / horizontal & vertical angles,
+  materials, finish, reducer stages, printed page offsets and per-series component lists;
+  `resolveProfileParameters`, `printedPageOf`, `AssumptionLevel.ENGINEERING_DERIVED`.
+- `FITTING_RISER_IN_60/30`, `FITTING_RISER_OUT_60/30` (catalog p.12, 14, 16, 18).
+- Acceptance suite 28 → 37 cases: golden fixtures from the PDF, mesh curvature probes, radius
+  semantics, port-plane termination, 12 physical mating scenarios, negative controls, assembly
+  demos; README snippets executed by `npm run test`.
+- Viewer: clear component / profile / parameters / validation / source hierarchy, assembly
+  workspace with per-joint report, Presentation Steel theme, presentation mode, URL parameters.
+
+### Fixed — second recovery audit (2026-09-24)
+- Profile `vendor` is the masked name `SECXXX` (project rule: the vendor name is not written out).
+- Viewer framing: the camera fits the content box into the viewport area left free by the info
+  card and toolbar (models were hidden under the card, or larger than the viewport).
+- `package-lock.json` now lists every platform's optional native binding (rolldown, lightningcss,
+  tailwind oxide, TypeScript 7). `npm ci` with npm ≥ 11 refused the old lockfile. Resolved
+  versions did not change.
+
+### Fixed
+- Viewer crash on connection mismatch (`connectionCheck.reasons` did not exist); hard-coded
+  "all PASS" banners replaced by live results; plant-scene trays now run along the rack.
+
 ## [1.0.0] - 2026-09-23
 
 ### Added

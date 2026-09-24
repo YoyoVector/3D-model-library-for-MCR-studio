@@ -5,6 +5,8 @@ export interface MateResult {
     placement: EngineeringPlacement;
     positionErrorMm: number;
     alignmentDotProduct: number;
+    /** Dot product of the two port up vectors after placement (1.0 = aligned). */
+    upDotProduct?: number;
     message: string;
 }
 /**

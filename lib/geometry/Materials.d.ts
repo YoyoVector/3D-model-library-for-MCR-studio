@@ -16,6 +16,7 @@ export declare class Materials {
     static readonly Support: THREE.MeshStandardMaterial;
     static readonly Bolt: THREE.MeshStandardMaterial;
     static createCableMaterial(colorHex?: number, emissiveHex?: number): THREE.MeshStandardMaterial;
+    static createCableFlowMaterial(colorHex?: number, emissiveHex?: number): THREE.MeshStandardMaterial;
     static readonly ColumnSteel: THREE.MeshStandardMaterial;
     static readonly BranchColumnSteel: THREE.MeshStandardMaterial;
     static readonly ConcretePier: THREE.MeshStandardMaterial;

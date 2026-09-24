@@ -1,16 +1,39 @@
-# Vendor Catalog Open Questions & Clarifications
+# Vendor Catalog — Resolved Interpretations & Open Questions
 
-**Document:** 鋁製電纜線槽 (Aluminum Cable Tray Catalog)  
-**Standard References:** CNS 13303 C4466, NEMA VE 1-2017  
-**Date:** 2026-09-23  
+**Document:** `CABLE TRAY CATALOGS_Code 1.pdf` (鋁製電纜線槽)
+**Updated:** 2026-09-24 (supersedes the 2026-09-23 version)
+**Page numbers:** PDF page index (printed catalog page in brackets).
 
----
+## 1. Resolved from the drawings (implemented and tested)
 
-| Page | Product | Question | Impact | Affects Routing? | Affects Geometry? | Engineering Resolution / Assumption |
-| :---: | :--- | :--- | :--- | :---: | :---: | :--- |
-| **5, 31, 42** | Horizontal 90° Elbow | Does catalog dimension symbol `R` represent inner curvature radius or centerline radius? | Port distance and centerline arc length vary by $W / 2$. | **Yes** | **Yes** | Drawing Page 5 shows arrow for $R$ terminating at the inner side rail boundary, with $W$ dimensioned across to the outer side rail. Therefore, catalog $R$ is verified as **inner bend radius**. For parametric centerline calculations, $R_{\text{centerline}} = R_{\text{inner}} + W / 2$ when vendor presets are selected, while generic inputs allow direct centerline $R$ when specified. |
-| **11, 15** | Vertical Inside & Outside Elbows | In Vertical Inside Elbow, does $R$ represent the rung seating inner curve or rail flange? In Vertical Outside Elbow, is $R$ inside rail or bottom? | Vertical bend radius affects cable minimum bending radius compliance. | **Yes** | **Yes** | Page 11 shows $R$ on the concave bottom where cables sit, with side rail extending outwards by $+H$. Page 15 shows $R$ on the inner side rail curve and $R+H$ on the outer bottom. Centerline is parameterized through tray vertical center: $R_{\text{center}} = R + H / 2$. |
-| **19–21** | Reducer Series (Center, Left, Right) | Are non-600mm transition lengths supported by the manufacturer, or is 600mm the sole factory fabricated standard? | Affects whether project engineers can order compact reducers (e.g. 300mm or 450mm). | **Yes** | **Yes** | Catalog explicitly tabulates length as fixed $600\,\text{mm}$ (with $200\,\text{mm}$ inlet straight, $200\,\text{mm}$ transition taper, and $200\,\text{mm}$ outlet straight) across all width combinations from $200 \times 100$ to $1000 \times 900$. The library supports $600\,\text{mm}$ as standard vendor preset, while retaining generic parametric length override for field modifications. |
-| **4, 30, 41** | Ladder vs. Ventilated Through Bottom Perforations | How do the bottom slot perforations in Ventilated Through affect cable clearance and airflow compared to Ladder rungs? | Visual appearance and bottom support plane. | **No** | **Yes** (Visual) | Routing ports and centerline conventions are 100% identical between Ladder and Ventilated Through trays. Both share the same connection ports, mating conventions, and routing logic. Perforation geometry is modeled via tray style / visual parameters. |
-| **20–26** | Small Accessories & Plates | Are splice plates and hold-down clamps required to be placed manually by 3D routing engineers in MCR-Studio? | Modeling overhead and performance with thousands of instances. | **No** | **No** | Verified in Section 3 & Section 27: Small accessories are not modeled as individual 3D routing components. They are derived via rule-based BOM calculations (e.g., $N_{\text{joints}} \times 2$ splice plates, $N_{\text{supports}} \times 2$ hold-down clamps) in downstream procurement. |
-| **31, 42** | Cover Clearances ($W+6$ vs $W+38$) | Why does Ventilated Through specify $W+6\,\text{mm}$ cover width while Ladder specifies $W+38\,\text{mm}$? | Envelope bounds and clash detection clearance. | **No** | **Yes** (Bounds) | Ladder tray side rails have wide extruded top flanges ($30\,\text{mm}$ outward lips) requiring wider covers ($W + 38\,\text{mm}$). Ventilated Through uses formed sheet metal with a narrow $3\,\text{mm}$ top lip per side ($W + 6\,\text{mm}$). Both are handled via profile-driven envelope calculation. |
+| Topic | Pages | Resolution | Previous doc / code |
+| :--- | :---: | :--- | :--- |
+| Horizontal bend R | 5–8, 31–32, 42–43 | R is the **inner side-rail** radius: bottom chain `W │ R │ 125`, cover inner edge `R−19` (= flange edge R−13 minus 6 mm overhang). Centerline R + W/2. | Doc said inner radius, code used centerline radius. |
+| Vertical inside bend R | 11–14, 34, 44 | R is on the **rail-top / cover side** (cover `R−2`, chain `125 │ R │ H`); the tray bottom (rungs) is on the outer radius R + H. | Doc claimed R is on the "concave bottom where cables sit" — wrong side. |
+| Vertical outside bend R | 15–18, 35, 45 | R is at the **tray bottom** (chain `125 │ R │ H`, left chain `H │ R │ 125`); cover side R + H (cover `H+R−10`). | Code had the riser section rotated 90° (up = width axis). |
+| One derivation | all bends | catalogRadius → centerlineRadius (R + W/2 or R + H/2) → outer radius (R + W or R + H) in `TrayLayouts.ts`; ports, routes, bounds, geometry and BOM read it. `radiusReference: 'CENTERLINE'` is a migration aid for legacy callers. | Each module interpreted `radius` on its own. |
+| Tangents | 5–18, 31–35, 42–45 | 125 mm straight at every bend / tee / cross end; ports sit at the physical end of the tangent. | Parameter existed but was ignored. |
+| Tee / Cross shape | 9, 10, 33 | Radius-R curved corner rails; spans from the dimension chains. | Straight boxes, square junction. |
+| Reducer shape & hand | 19–21 | 200 + 200 + 200; LEFT keeps the left rail straight viewed from W1 toward W2 (NEMA convention; plan drawing p.20). | Linear taper; LEFT/RIGHT mirrored. |
+| Ventilated series content | 29, 40 (index) | A (100×50): straight, H90, H45, tee, VI90, VO90. B (300×100): straight, H90, H30, VI90, VO90. | Classification claimed tee / cross / reducers / 60° for B. |
+| Materials | 4, 30, 31, 41 | Ladder rails 6063-T5 4.0t; ventilated A straight 6063-T5 2.0t, fittings 5052-H32 2.0t; ventilated B 5052-H32 2.0t; covers 5052 2.0t; finish polyester powder coat #67 ≥ 50 µm. | BOM spec printed "HDG 85 µm" (galvanised) — wrong for aluminium. |
+| Small accessories | 22–26, 36–37, 46–47 | Not routing geometry; BOM rules later. Straight-tray splice plates are optional, tagged accessory, excluded from bounds / mate. | Splice plates always on and 60 mm past the port. |
+
+## 2. Documented approximations (drawing does not dimension them)
+
+| Item | Pages | Approximation | Impact |
+| :--- | :---: | :--- | :--- |
+| Web position inside the 30 mm ladder flange | 4 | Symmetric I: flange −17…+13 mm about the W line, web −4…0 mm (only W + 26 overall is dimensioned). | Rung length ± 8 mm; no routing / port impact. |
+| Rung layout inside tee / cross junction | 9, 10 | Rungs spanning to the curved rail at ≤ 250 mm pitch. | Visual only. |
+| Ventilated floor slots (10×30) | 30, 41 | Solid floor plate. | Visual only. |
+| Separator plate position | 25 | Centred, standing on rungs / floor. | Visual only. |
+
+## 3. Project decisions (2026-09-24)
+
+1. **Vendor name** — not written out anywhere in the library or docs; profiles use the masked name `SECXXX`.
+2. **Project default radius** — **R = 300** is the project standard (profile default). 600 / 900 stay selectable as catalog sizes.
+3. **Covers (蓋板)** — **not modelled.** Covers stay out of geometry, bounds and the clearance envelope; they can be handled as BOM items later.
+4. **Ladder rail web position** — the §2 approximation is **accepted** (no routing / port impact).
+5. **Handwritten annotations** in the PDF — **ignored**; not used by the library.
+
+No open questions remain for the vendor.

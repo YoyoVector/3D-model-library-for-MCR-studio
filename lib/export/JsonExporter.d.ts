@@ -51,4 +51,8 @@ export declare class JsonExporter {
      * Exports active scene instances into canonical JSON payload.
      */
     static exportScene(instances: ComponentInstance[]): ExportedSceneJson;
+    /**
+     * Exports an active component instance into serialized JSON string.
+     */
+    static exportInstance(inst: ComponentInstance): string;
 }

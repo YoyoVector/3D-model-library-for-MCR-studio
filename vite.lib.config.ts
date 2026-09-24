@@ -13,6 +13,7 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: [
         'src/App.tsx',
+        'src/app/**',
         'src/main.tsx',
         'src/tests/runCliTests.ts',
         'src/tests/packageContractTest.ts',

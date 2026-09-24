@@ -113,23 +113,26 @@ export class BomManager {
         }
       }
 
-      const key = def.id;
       let spec = '';
       let unit = 'PCS';
       const qty = 1;
 
-      if (def.id === 'TRAY_STRAIGHT' || def.id === 'TRAY_STRAIGHT_DIVIDER') {
-        const lenM = (inst.effectiveParameters.length || 3000) / 1000;
-        spec = `W=${inst.effectiveParameters.width || 600}mm / H=${inst.effectiveParameters.depth || 100}mm / L=${lenM}m (HDG 85μm)`;
+      // Tray / fitting specs are read from the same engineering dimensions that drive the geometry.
+      const dims = def.getEngineeringDimensions?.(inst.effectiveParameters);
+      const style = dims?.style === 'VENTILATED_THROUGH' ? 'Ventilated' : 'Ladder';
+
+      if (dims && (def.id === 'TRAY_STRAIGHT' || def.id === 'TRAY_STRAIGHT_DIVIDER')) {
+        spec = `${style} W=${dims.width}mm H=${dims.height}mm L=${Number(dims.length) / 1000}m`;
         unit = '支';
-      } else if (def.id.startsWith('FITTING_ELBOW')) {
-        spec = `R=${inst.effectiveParameters.radius || 600}mm W=${inst.effectiveParameters.width || 600}mm Angle=${inst.effectiveParameters.angleDeg ?? 90}°`;
+      } else if (dims && (def.id.startsWith('FITTING_ELBOW') || def.id.startsWith('FITTING_RISER'))) {
+        spec = `${style} W=${dims.width}mm H=${dims.height}mm R=${dims.catalogRadius}mm ${dims.angleDeg}° T=${dims.tangentLength}mm`;
         unit = '組';
-      } else if (def.id === 'FITTING_TEE') {
-        spec = `W=${inst.effectiveParameters.width || 600}mm L=${inst.effectiveParameters.length || 1400}mm Branch=${inst.effectiveParameters.branchLength || 700}mm`;
+      } else if (dims && (def.id === 'FITTING_TEE' || def.id === 'FITTING_CROSS')) {
+        const span = def.id === 'FITTING_TEE' ? `span ${dims.mainSpan}mm / branch ${dims.branchProjection}mm` : `span ${dims.span}mm`;
+        spec = `${style} W=${dims.width}mm H=${dims.height}mm R=${dims.catalogRadius}mm T=${dims.tangentLength}mm (${span})`;
         unit = '組';
-      } else if (def.id.startsWith('FITTING_REDUCER')) {
-        spec = `W1=${inst.effectiveParameters.inletWidth || 600}mm -> W2=${inst.effectiveParameters.outletWidth || 450}mm L=${inst.effectiveParameters.length || 500}mm`;
+      } else if (dims && def.id.startsWith('FITTING_REDUCER')) {
+        spec = `${style} W1=${dims.inletWidth}mm -> W2=${dims.outletWidth}mm H=${dims.height}mm L=${dims.length}mm`;
         unit = '組';
       } else if (def.id === 'PENETRATION_MCT') {
         spec = `RG M6x1 A-60 防火氣密等級 (${inst.effectiveParameters.widthMm || 600}x${inst.effectiveParameters.heightMm || 900}mm)`;
@@ -145,6 +148,8 @@ export class BomManager {
       }
 
       const isKit = AssemblyRegistry.isAssembly(def.id) || (def.subComponents && def.subComponents.length > 0) || false;
+      // One BOM line per definition AND specification: different sizes of a fitting are separate lines.
+      const key = `${def.id}|${spec}`;
 
       if (itemMap.has(key)) {
         itemMap.get(key)!.quantity += qty;

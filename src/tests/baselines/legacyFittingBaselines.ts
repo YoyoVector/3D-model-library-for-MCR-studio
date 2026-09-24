@@ -59,8 +59,8 @@ export const LEGACY_FITTING_BASELINES: Record<string, LegacyVisualBaseline> = {
     childMeshCount: 7,
     vertexCount: 3216,
     triangleCount: 1092,
-    bounds: [0, -0.05, -0.8739, 0.92, 0.05, 0.92],
-    projectedCentroid: [0.1447, -0.0832],
+    bounds: [0, -0.05, -0.92, 0.92, 0.05, 0],
+    projectedCentroid: [0.2619, 0.0112],
   },
   FITTING_TEE: {
     id: 'FITTING_TEE',

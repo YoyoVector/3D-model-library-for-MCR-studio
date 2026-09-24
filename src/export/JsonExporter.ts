@@ -103,4 +103,11 @@ export class JsonExporter {
       })),
     };
   }
+
+  /**
+   * Exports an active component instance into serialized JSON string.
+   */
+  public static exportInstance(inst: ComponentInstance): string {
+    return JSON.stringify(this.exportScene([inst]), null, 2);
+  }
 }

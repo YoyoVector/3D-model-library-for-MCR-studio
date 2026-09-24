@@ -90,6 +90,10 @@ export class Materials {
     });
   }
 
+  public static createCableFlowMaterial(colorHex: number = 0x06b6d4, emissiveHex: number = 0x00aaff) {
+    return this.createCableMaterial(colorHex, emissiveHex);
+  }
+
   // Main Pipe Rack structural steel
   public static readonly ColumnSteel = new THREE.MeshStandardMaterial({
     color: 0x1e293b,

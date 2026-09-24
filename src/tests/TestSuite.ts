@@ -606,9 +606,9 @@ export class AcceptanceTestSuite {
     const lenErr = Math.abs(centerline.analyticLength - expectedAnalyticLen);
     const lenPassed = lenErr < 0.01;
 
-    // 4. Geometry bounds in Z reflect 37.5°
+    // 4. Geometry bounds in Z reflect 37.5° along negative Z sweep
     const box = new THREE.Box3().setFromObject(mesh);
-    const geoPassed = box.min.z < 0 && box.max.z > 0;
+    const geoPassed = box.min.z < -0.2 && box.max.z <= 0.01;
 
     // 5. Catalog check
     const conf = CatalogStandards.checkConformance({ angleDeg: customAngle });

@@ -44,6 +44,7 @@
     "lint": "tsc --noEmit",
     "test": "tsx src/tests/runCliTests.ts",
     "test:contract": "tsx src/tests/packageContractTest.ts",
+    "test:package": "tsx src/tests/packageContractTest.ts",
     "test:smoke": "tsx src/tests/packSmokeTest.ts",
     "test:all": "npm run test && npm run test:contract && npm run test:smoke",
     "prepublishOnly": "npm run lint && npm run test && npm run build:lib && npm run test:contract && npm run test:smoke"

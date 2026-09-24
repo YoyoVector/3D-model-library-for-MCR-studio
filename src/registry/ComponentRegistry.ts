@@ -23,25 +23,24 @@ import { GeometryGenerators } from '../geometry/Generators.ts';
  */
 function computeHorizontalElbowBounds(r: number, w: number, d: number, angleDeg: number): ComponentBoundsDefinition {
   const t = 40;
-  const rungW = 35;
   const aDeg = Math.abs(angleDeg);
   const aRad = (aDeg * Math.PI) / 180;
 
   const outerR = r + w / 2 + t / 2;
-  const stepDeg = 15;
-  const count = Math.max(2, Math.round(aDeg / stepDeg));
-  let minZ = 0;
-  for (let i = 1; i < count; i++) {
-    const a = (i * aRad) / count;
-    const centerZ = -r * Math.sin(a);
-    const halfZ = (w / 2) * Math.sin(a) + (rungW / 2) * Math.cos(a);
-    const rungMinZ = centerZ - halfZ;
-    if (rungMinZ < minZ) minZ = rungMinZ;
-  }
+  const innerR = Math.max(0, r - w / 2 - t / 2);
+
+  const minX = aDeg >= 90 ? 0 : innerR * Math.cos(aRad);
+  const maxX = outerR;
+
+  const minY = -d / 2;
+  const maxY = d / 2;
+
+  const minZ = aDeg >= 90 ? -outerR : -outerR * Math.sin(aRad);
+  const maxZ = 0;
 
   return {
-    min: [0, -d / 2, minZ],
-    max: [outerR, d / 2, outerR],
+    min: [minX, minY, minZ],
+    max: [maxX, maxY, maxZ],
   };
 }
 
@@ -1372,6 +1371,148 @@ export class ComponentRegistry {
         return computeHorizontalElbowBounds(r, w, d, aDeg);
       },
       buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: params.angleDeg ?? 45 } as any),
+    });
+
+    // 25b. FITTING_ELBOW_60 (Catalog Page 7, 42-43)
+    this.register({
+      schemaVersion: '2.0.0',
+      componentVersion: '1.0.0',
+      id: 'FITTING_ELBOW_60',
+      name: 'Horizontal Elbow 60°',
+      nameZh: '60° 水平轉彎頭',
+      family: 'FITTING',
+      origin: ComponentOrigin.NEW_COMPONENT,
+      role: ComponentRole.FITTING,
+      description: 'Standard 60-degree horizontal elbow per Vendor Catalog Page 7 and Page 42-43.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
+      defaultParameters: {
+        width: 600,
+        depth: 100,
+        radius: 600,
+        angleDeg: 60,
+        tangentLength: 125,
+      },
+      provenance: {
+        radius: { source: 'Vendor Catalog Page 7 & Page 42-43 R=600mm', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '60° Standard Elbow' },
+      },
+      getLocalPorts: (params) => {
+        const r = params.radius || 600;
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 60;
+        const aRad = (aDeg * Math.PI) / 180;
+        const endX = r * Math.cos(aRad);
+        const endZ = -r * Math.sin(aRad);
+        const outDirX = -Math.sin(aRad);
+        const outDirZ = -Math.cos(aRad);
+
+        return [
+          {
+            id: 'PORT_A',
+            name: 'Inlet Port A',
+            localPosition: [r, 0, 0],
+            localDirection: [0, 0, 1],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_B',
+            name: 'Outlet Port B',
+            localPosition: [endX, 0, endZ],
+            localDirection: [outDirX, 0, outDirZ],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+        ];
+      },
+      getCenterlineRoutes: (params) => [
+        RouteGenerator.createHorizontalElbow('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 60),
+      ],
+      getBounds: (params) => {
+        const r = params.radius || 600;
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 60;
+        return computeHorizontalElbowBounds(r, w, d, aDeg);
+      },
+      buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: params.angleDeg ?? 60 } as any),
+    });
+
+    // 25c. FITTING_ELBOW_30 (Catalog Page 7, 43)
+    this.register({
+      schemaVersion: '2.0.0',
+      componentVersion: '1.0.0',
+      id: 'FITTING_ELBOW_30',
+      name: 'Horizontal Elbow 30°',
+      nameZh: '30° 水平轉彎頭',
+      family: 'FITTING',
+      origin: ComponentOrigin.NEW_COMPONENT,
+      role: ComponentRole.FITTING,
+      description: 'Standard 30-degree horizontal elbow per Vendor Catalog Page 7 and Page 43.',
+      hasBomMetadata: true,
+      bomScope: BomScope.MCR_CABLE_TRAY_BOM,
+      includedInMcrBom: true,
+      defaultParameters: {
+        width: 600,
+        depth: 100,
+        radius: 600,
+        angleDeg: 30,
+        tangentLength: 125,
+      },
+      provenance: {
+        radius: { source: 'Vendor Catalog Page 7 & Page 43 R=600mm', assumptionLevel: AssumptionLevel.VERIFIED_VENDOR_CATALOG, notes: '30° Standard Elbow' },
+      },
+      getLocalPorts: (params) => {
+        const r = params.radius || 600;
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 30;
+        const aRad = (aDeg * Math.PI) / 180;
+        const endX = r * Math.cos(aRad);
+        const endZ = -r * Math.sin(aRad);
+        const outDirX = -Math.sin(aRad);
+        const outDirZ = -Math.cos(aRad);
+
+        return [
+          {
+            id: 'PORT_A',
+            name: 'Inlet Port A',
+            localPosition: [r, 0, 0],
+            localDirection: [0, 0, 1],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+          {
+            id: 'PORT_B',
+            name: 'Outlet Port B',
+            localPosition: [endX, 0, endZ],
+            localDirection: [outDirX, 0, outDirZ],
+            localUp: [0, 1, 0],
+            width: w,
+            depth: d,
+            connectionType: 'TRAY_END',
+          },
+        ];
+      },
+      getCenterlineRoutes: (params) => [
+        RouteGenerator.createHorizontalElbow('PORT_A', 'PORT_B', params.radius || 600, params.angleDeg ?? 30),
+      ],
+      getBounds: (params) => {
+        const r = params.radius || 600;
+        const w = params.width || 600;
+        const d = params.depth || 100;
+        const aDeg = params.angleDeg ?? 30;
+        return computeHorizontalElbowBounds(r, w, d, aDeg);
+      },
+      buildGeometry: (params) => GeometryGenerators.buildHorizontalElbow({ ...params, angleDeg: params.angleDeg ?? 30 } as any),
     });
 
     // 26. FITTING_RISER_IN_45

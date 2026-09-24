@@ -209,7 +209,7 @@ export class GeometryGenerators {
     const geo = new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled: false, curveSegments: 32 });
     geo.translate(0, 0, -depth / 2);
     const mesh = new THREE.Mesh(geo, material);
-    mesh.rotation.x = Math.PI / 2;
+    mesh.rotation.x = -Math.PI / 2; // Align curvature with rungs and centerline in negative Z
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;

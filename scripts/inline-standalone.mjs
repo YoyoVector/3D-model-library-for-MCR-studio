@@ -17,8 +17,8 @@ const outFile = path.join(outDir, 'MCR-3D-Component-Library.html');
 let html = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
 const read = (ref) => fs.readFileSync(path.join(dist, ref.replace(/^\.\//, '')), 'utf8');
 // Inline code must not close its own <script> / <style> element early.
-const escapeScript = (s) => s.replace(/<\/script/gi, '<\/script');
-const escapeStyle = (s) => s.replace(/<\/style/gi, '<\/style');
+const escapeScript = (s) => s.replace(/<\/script/gi, '<\\/script');
+const escapeStyle = (s) => s.replace(/<\/style/gi, '<\\/style');
 
 let scripts = 0;
 let styles = 0;
@@ -36,6 +36,9 @@ const leftovers = html.match(/(src|href)="\.?\/?assets\/[^"]+"/g);
 if (scripts !== 1 || styles !== 1 || leftovers) {
   throw new Error(`Standalone inline failed: ${scripts} scripts, ${styles} styles, leftovers ${leftovers?.join(', ')}`);
 }
+
+// Same bytes on every platform: a Windows checkout (CRLF) must build the file CI (LF) builds.
+html = html.replace(/\r+\n/g, '\n');
 
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(outFile, html);

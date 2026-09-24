@@ -1,4 +1,4 @@
-import { ComponentDefinition, EngineeringPlacement, WorldPortDefinition, CenterlineRouteDefinition, ComponentBoundsDefinition } from './Schema.ts';
+import { ComponentDefinition, EngineeringPlacement, WorldPortDefinition, CenterlineRouteDefinition, ComponentBoundsDefinition, GeometryBuildOptions } from './Schema.ts';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -58,7 +58,12 @@ export declare class ComponentInstance {
      * Builds or returns the Three.js Object3D for this instance.
      * Local geometry mesh vertices are freshly generated from effectiveParameters,
      * mesh.scale remains strictly (1, 1, 1).
+     *
+     * With `options` (e.g. host materials) a fresh, uncached object is returned: the host owns
+     * it and its geometry. Without options the cached object on the shared library materials is
+     * returned.
      */
-    getThreeMesh(): THREE.Group;
+    getThreeMesh(options?: GeometryBuildOptions): THREE.Group;
+    private buildMesh;
     private applyPlacementToMesh;
 }

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { Materials } from './Materials.ts';
 import { type Vec3, type PathStation, vec, samplePath, sectionPoint, sideOf } from './SweepPath.ts';
 import type { TrayLayout, SweepSpec, RungSpec, FloorSpec } from './TrayLayouts.ts';
+import type { GeometryBuildOptions } from '../core/Schema.ts';
 
 /**
  * Converts a TrayLayout (mm, engineering description) into Three.js meshes (metres).
@@ -151,7 +152,7 @@ function sweepInto(acc: MeshAccumulator, sweeps: SweepSpec[]): void {
   });
 }
 
-export interface TrayMeshOptions {
+export interface TrayMeshOptions extends GeometryBuildOptions {
   /** Intrinsically-safe tray colouring (plant scene). */
   isIS?: boolean;
 }
@@ -160,11 +161,16 @@ export interface TrayMeshOptions {
  * Builds the Three.js group for a tray layout.
  * Children are tagged with `userData.part` ('RAILS' | 'FLOOR' | 'RUNGS' | 'DIVIDER' | 'ACCESSORY');
  * accessory meshes also carry `userData.isAccessory = true` and are not part of the tray body.
+ * Meshes on a shared library material carry `userData.sharedMaterial = true`; meshes on a
+ * host material (`options.materials`) belong to the host.
  */
 export function buildTrayLayoutGroup(layout: TrayLayout, options: TrayMeshOptions = {}): THREE.Group {
   const group = new THREE.Group();
   group.name = `Tray_${layout.family}`;
-  const bodyMat = options.isIS ? Materials.TrayIS : Materials.Tray;
+  const host = options.materials ?? {};
+  const bodyMat = host.body ?? (options.isIS ? Materials.TrayIS : Materials.Tray);
+  const dividerMat = host.divider ?? host.body ?? Materials.Divider;
+  const accessoryMat = host.accessory ?? host.body ?? Materials.Support;
 
   const addMesh = (acc: MeshAccumulator, name: string, part: string, mat: THREE.Material, isAccessory = false) => {
     if (acc.isEmpty) return;
@@ -172,7 +178,7 @@ export function buildTrayLayoutGroup(layout: TrayLayout, options: TrayMeshOption
     mesh.name = name;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.userData = { part, isAccessory };
+    mesh.userData = { part, isAccessory, sharedMaterial: !Object.values(host).includes(mat) };
     group.add(mesh);
   };
 
@@ -191,11 +197,11 @@ export function buildTrayLayoutGroup(layout: TrayLayout, options: TrayMeshOption
 
   const divider = new MeshAccumulator();
   sweepInto(divider, layout.sweeps.filter((s) => s.part === 'DIVIDER'));
-  addMesh(divider, 'Divider', 'DIVIDER', Materials.Divider);
+  addMesh(divider, 'Divider', 'DIVIDER', dividerMat);
 
   const acc = new MeshAccumulator();
   sweepInto(acc, layout.accessories);
-  addMesh(acc, 'SplicePlates', 'ACCESSORY', Materials.Support, true);
+  addMesh(acc, 'SplicePlates', 'ACCESSORY', accessoryMat, true);
 
   return group;
 }

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — host integration (tray networks, plain script build)
+- `normalizeTrayNetwork` / `resolveTrayNetwork` (`src/network/`): a host's nodes-and-segments tray
+  drawing becomes a catalog-true installation — one fitting per bend / junction (elbows, vertical
+  bends, tee, cross), centre reducers where the width changes (the catalog tee / cross have one W),
+  straight trays between the fittings' reach, physical route centerline lengths
+  (`pathCenterline`) and a take-off (`bom()`: fittings per size, straights in 3 m pieces per
+  continuous run). Vertical tees become level tee + stub + vertical bend; widths snap up to the
+  next catalog width; everything else the catalog cannot build is an ERROR issue.
+  `updateRouteForChanges` updates host routes (cable paths) for the inserted stubs.
+  `pathPoints` returns the world centerline of a route through the fittings, for drawing cables.
+- Fitting choices: `options.bendWidth` ('WIDEST_LEG' default, 'NARROWEST_LEG' = reduce before
+  the bend) and `options.nodeOverrides` (per-node fitting `width` and catalog `radius`). A fitting
+  narrower than a leg gets its reducer before it, wider after it; reducers, straights, route lengths,
+  BOM and meshes follow. `layout.fittingChoices(nodeId)` lists what a designer may choose; invalid
+  choices are ERROR `OVERRIDE_INVALID`, choices on plain nodes WARNING `OVERRIDE_UNUSED`.
+  Acceptance Case AR (44 total).
+- `docs/integration/mcr-studio/`: integration notes for MCR-Studio (with r128 renders and the
+  sample check harness).
+- `PlanFrames` (`PAGE_Y_DOWN_METRES`, `NORTH_UP_METRES`) and `leftOfTravel`: the one right-handed
+  world frame and named conversions from drawing coordinates.
+- Host materials: `getThreeMesh({ materials: { body, divider, accessory } })` and
+  `buildGeometry(params, options)` build a fresh object on the host's material; default meshes are
+  flagged `userData.sharedMaterial = true`.
+- `lib/index.iife.js`: plain `<script>` build on a global `THREE` (global `McrParametric3D`),
+  tested on three r128 and current (`npm run test:script`).
+- `standalone/MCR-3D-Component-Library.html`: the viewer as one file that opens from disk.
+- Acceptance Cases AL–AQ: plan-frame handedness with a mirrored-frame negative control,
+  network fittings with physical joint checks, normalization and ERROR reporting, route centerline
+  measured along the placed geometry, network take-off, host materials.
+- CI fails when the committed `lib/` / `standalone/` differ from a fresh build.
+
+### Removed
+- `lib/assets/aistudio/.gitignore` (AI Studio leftover; every `build:lib` deleted it).
+
 Vendor-catalog recovery of the partial Gemini work (see `docs/handoff/recovery-audit.md`,
 `docs/catalog-validation/`). Version number left for the maintainer to decide.
 

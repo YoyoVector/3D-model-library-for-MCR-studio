@@ -19,6 +19,7 @@ export default defineConfig({
         'src/tests/packageContractTest.ts',
         'src/tests/readmeCompilationTest.ts',
         'src/tests/packSmokeTest.ts',
+        'src/tests/scriptTagTest.ts',
       ],
     }),
   ],
@@ -33,8 +34,10 @@ export default defineConfig({
     lib: {
       entry: path.resolve(process.cwd(), 'src/index.ts'),
       name: 'McrParametric3D',
-      formats: ['es', 'cjs'],
-      fileName: (format) => `index.${format === 'es' ? 'js' : 'cjs'}`,
+      // iife: plain <script> build for offline hosts without npm; reads the global THREE and
+      // defines the global McrParametric3D (tested against three r128 by `npm run test:script`).
+      formats: ['es', 'cjs', 'iife'],
+      fileName: (format) => `index.${format === 'es' ? 'js' : format === 'cjs' ? 'cjs' : 'iife.js'}`,
     },
     rollupOptions: {
       external: [

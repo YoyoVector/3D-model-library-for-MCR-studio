@@ -172,4 +172,41 @@ export declare class AcceptanceTestSuite {
      * Case AK: Assembly demos (viewer) — joints valid and end positions equal the hand-derived layout.
      */
     static testCaseAK_AssemblyDemos(): TestCaseResult;
+    /**
+     * Case AL: Plan frames keep the drawing's handedness. A LEFT reducer (p.20) laid along the
+     * drawing keeps the rail on the drawing's left straight, and every resolved fitting port lies
+     * on its drawn segment. Negative control: the wrong frame puts the straight rail on the right.
+     */
+    static testCaseAL_PlanFrameHandedness(): TestCaseResult;
+    /**
+     * Case AM: Network → catalog fittings. Expected fittings per node, straight lengths from the
+     * fittings' own reach (hand-derived), and every joint passes the physical joint check.
+     */
+    static testCaseAM_NetworkFittings(): TestCaseResult;
+    /**
+     * Case AN: Normalization and issue reporting. Catalog width snap, vertical tee replacement,
+     * and ERRORs for what the catalog cannot build (never silently approximated).
+     */
+    static testCaseAN_NetworkNormalizeAndIssues(): TestCaseResult;
+    /**
+     * Case AO: Physical centerline length of a route = straights + fitting routes + reducers, and it
+     * equals the length measured along the placed instances' own world centerlines (continuous).
+     */
+    static testCaseAO_NetworkCenterline(): TestCaseResult;
+    /**
+     * Case AP: Material take-off from the network: fittings per size, and straight trays cut from
+     * standard 3 m pieces per continuous run (runs through pass-through nodes are cut together).
+     */
+    static testCaseAP_NetworkBom(): TestCaseResult;
+    /**
+     * Case AQ: Host materials. A host (e.g. a viewer colouring trays by engineering state) passes its
+     * own material; geometry is identical, the shared library materials are untouched and flagged.
+     */
+    static testCaseAQ_HostMaterials(): TestCaseResult;
+    /**
+     * Case AR: Bend width rule and designer choices per node. Reducing before a bend, a larger radius
+     * and a narrower tee re-derive reducers, straight lengths, route lengths and meshes; every
+     * configuration is physically joined. Invalid choices are errors; choices on plain nodes warn.
+     */
+    static testCaseAR_FittingChoices(): TestCaseResult;
 }

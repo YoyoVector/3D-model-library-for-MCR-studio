@@ -99,9 +99,9 @@ function defineTrayComponent(
     getLocalPorts: (params) => resolve(params).ports,
     getCenterlineRoutes: (params) => resolve(params).routes,
     getBounds: (params) => resolve(params).bounds,
-    buildGeometry: (params) => {
+    buildGeometry: (params, options) => {
       const p = withDefaults(defaultParameters, params);
-      return buildTrayLayoutGroup(layoutOf(p), { isIS: !!p.isIS });
+      return buildTrayLayoutGroup(layoutOf(p), { ...options, isIS: !!p.isIS });
     },
     getEngineeringDimensions: (params) => resolve(params).dims,
   };

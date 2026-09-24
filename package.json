@@ -26,7 +26,8 @@
       "types": "./lib/index.d.ts",
       "import": "./lib/index.js",
       "require": "./lib/index.cjs"
-    }
+    },
+    "./iife": "./lib/index.iife.js"
   },
   "files": [
     "lib",
@@ -36,7 +37,7 @@
   ],
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "npm run build:lib && npm run build:app",
+    "build": "npm run build:lib && npm run build:app && npm run build:standalone",
     "build:lib": "vite build --config vite.lib.config.ts",
     "build:app": "vite build",
     "preview": "vite preview",
@@ -46,8 +47,10 @@
     "test:contract": "tsx src/tests/packageContractTest.ts",
     "test:package": "tsx src/tests/packageContractTest.ts",
     "test:smoke": "tsx src/tests/packSmokeTest.ts",
-    "test:all": "npm run test && npm run test:contract && npm run test:smoke",
-    "prepublishOnly": "npm run lint && npm run test && npm run build:lib && npm run test:contract && npm run test:smoke"
+    "test:all": "npm run test && npm run test:contract && npm run test:script && npm run test:smoke",
+    "prepublishOnly": "npm run lint && npm run test && npm run build:lib && npm run test:contract && npm run test:script && npm run test:smoke",
+    "test:script": "tsx src/tests/scriptTagTest.ts",
+    "build:standalone": "vite build --config vite.standalone.config.ts && node scripts/inline-standalone.mjs"
   },
   "peerDependencies": {
     "three": ">=0.160.0"
@@ -57,7 +60,6 @@
       "optional": false
     }
   },
-  "dependencies": {},
   "devDependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
@@ -78,9 +80,11 @@
     "react-dom": "^19.0.1",
     "tailwindcss": "^4.3.3",
     "three": "^0.186.0",
+    "three-r128": "npm:three@^0.128.0",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vite-plugin-dts": "^5.1.1"
-  }
+  },
+  "unpkg": "./lib/index.iife.js"
 }

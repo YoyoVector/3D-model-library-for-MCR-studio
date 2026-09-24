@@ -34,6 +34,11 @@ async function runPackageContractTests() {
       'Transforms',
       'CatalogStandards',
       'AcceptanceTestSuite',
+      'PlanFrames',
+      'trayNetworkFromPlan',
+      'normalizeTrayNetwork',
+      'resolveTrayNetwork',
+      'updateRouteForChanges',
     ];
 
     for (const exp of expectedExports) {
@@ -74,6 +79,11 @@ async function runPackageContractTests() {
       'Transforms',
       'CatalogStandards',
       'AcceptanceTestSuite',
+      'PlanFrames',
+      'trayNetworkFromPlan',
+      'normalizeTrayNetwork',
+      'resolveTrayNetwork',
+      'updateRouteForChanges',
     ];
 
     for (const exp of expectedExports) {

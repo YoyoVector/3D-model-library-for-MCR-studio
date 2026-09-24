@@ -40,5 +40,8 @@ export * from './geometry/index.ts';
 // 8. Canonical Scene & Schema 2.0.0 JSON Exporter
 export * from './export/index.ts';
 
-// 9. Engineering Invariant & Acceptance Test Suite (Case A ~ Case V)
+// 9. Tray networks → catalog fittings, plan frames (host integration)
+export * from './network/index.ts';
+
+// 10. Engineering Invariant & Acceptance Test Suite
 export * from './tests/index.ts';
